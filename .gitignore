@@ -1,0 +1,25 @@
+# Secretos: la API key nunca va al repositorio
+.env
+.env.*
+*.env
+
+# Caché, base de datos, logs y bloqueo
+data/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.db
+*.lock
+
+# Informes generados
+reports/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+build/
+dist/

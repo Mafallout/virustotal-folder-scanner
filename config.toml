@@ -1,0 +1,112 @@
+# Configuración de vtscan. No pongas aquí la API key: se lee de la variable de
+# entorno VT_API_KEY (o de un archivo .env, que git ignora).
+# Si borras una opción, se usa su valor por defecto.
+
+[general]
+# Carpeta para la base de datos (caché), los logs y el bloqueo. Relativa a vtscan.py.
+data_dir = "data"
+
+[scan]
+# Extensiones que se analizan por defecto (con --all-files se analiza todo).
+extensions = [
+    ".exe", ".dll", ".sys", ".msi", ".bat", ".cmd", ".ps1", ".vbs", ".js",
+    ".scr", ".com", ".jar",
+    ".asi", ".cpl", ".ocx", ".pif", ".hta", ".wsf", ".vbe", ".jse", ".psm1",
+    ".lnk", ".msp",
+]
+# Busca ejecutables camuflados: archivos con otra extensión que empiezan por la
+# cabecera "MZ" de los .exe/.dll. No se abren los archivos de datos obvios
+# (imágenes, audio, paquetes de juego...); esa lista está en el código y se puede
+# sustituir con la opción no_sniff_extensions = [".png", ...].
+detect_executables_by_content = true
+# Nombres de carpetas que no se recorren nunca, por ejemplo ["node_modules"].
+exclude_dirs = []
+# Tamaño máximo. VirusTotal no admite archivos de más de 650 MB.
+max_file_size_mb = 650
+# Hilos para calcular hashes. 4 va bien en SSD; en un disco mecánico usa 1 o 2.
+hash_workers = 4
+
+[virustotal]
+# Límites del plan gratuito. No los subas: VirusTotal rechazaría las peticiones.
+requests_per_minute = 4
+daily_limit = 500
+# Hasta este tamaño se sube directamente; por encima se pide una URL de subida.
+direct_upload_max_mb = 32
+# Un hash que VirusTotal no conocía se vuelve a consultar pasados estos días.
+not_found_cache_days = 7
+# Tras subir un archivo, cuándo se mira por primera vez si ya está analizado.
+analysis_first_check_seconds = 90
+# Cuántas veces se mira, como mucho, en una misma ejecución.
+analysis_max_checks_per_run = 6
+request_timeout_seconds = 30
+upload_timeout_seconds = 900
+
+[signatures]
+# Comprueba la firma digital (Authenticode) de ejecutables y scripts.
+enabled = true
+# false: los firmados por estos fabricantes se consultan los últimos.
+# true: no se consultan (ahorra cuota, con un riesgo pequeño).
+skip_trusted_signed = false
+trusted_publishers = [
+    "Microsoft Corporation", "Microsoft Windows", "NVIDIA Corporation",
+    "Advanced Micro Devices, Inc.", "Advanced Micro Devices Inc.",
+    "Intel Corporation", "Valve", "Valve Corp.", "Valve Corporation",
+    "Epic Games Inc.", "Epic Games, Inc.", "Unity Technologies ApS",
+    "Unity Technologies SF", "Audiokinetic Inc.", "Google LLC", "Discord Inc.",
+]
+
+[verdict]
+# Motores que tienen que detectarlo para el nivel Crítico y para el Alto.
+critical_threshold = 10
+high_threshold = 3
+# Palabras de las etiquetas de los antivirus. Las de 4 letras o menos tienen que
+# coincidir enteras; las más largas pueden ir dentro de otra palabra.
+# Familias graves: con 2 motores que las nombren, el archivo pasa a Crítico.
+dangerous_keywords = [
+    "stealer", "pws", "psw", "spy", "trojanspy", "spyware", "keylogger",
+    "redline", "redlinestealer", "lumma", "lummac", "lummastealer", "vidar",
+    "raccoon", "stealc", "rhadamanthys", "risepro", "meduza", "azorult",
+    "formbook", "agenttesla", "lokibot", "mystic",
+    "rat", "backdoor", "remcos", "asyncrat", "njrat", "bladabindi", "dcrat",
+    "darkcomet", "quasar", "quasarrat", "nanocore", "xworm", "warzone",
+    "netwire", "cobaltstrike", "meterpreter",
+    "miner", "coinminer", "xmrig", "cryptominer",
+    "ransom", "ransomware", "djvu", "stop", "lockbit", "phobos",
+    "smokeloader", "privateloader", "amadey", "glupteba", "socelars",
+    "gcleaner", "nymaim", "emotet", "qakbot", "icedid", "bumblebee",
+    "sality", "virut", "neshta", "expiro", "ramnit",
+    "clipper", "clipbanker", "banker", "rootkit", "bootkit",
+]
+# Herramientas, parches y software no deseado (HackTool, PUA, RiskWare...): a menudo falsos positivos.
+crack_keywords = [
+    "hacktool", "crack", "cracktool", "keygen", "patch", "patcher",
+    "activator", "kms", "kmsauto", "autokms", "riskware", "risktool", "pua",
+    "pup", "unwanted", "notavirus", "gamehack", "cheat", "trainer", "hack",
+    "tool", "program", "grayware", "adware", "softwarebundler", "bundler",
+    "presenoker", "hackkms", "potentially",
+]
+# Detecciones genéricas o de aprendizaje automático (más falsos positivos).
+generic_keywords = [
+    "generic", "gen", "heur", "heuristic", "ml", "ai", "malicious",
+    "confidence", "highconfidence", "unsafe", "suspicious", "static",
+    "attribute", "score", "variant", "zusy", "razy", "tedy", "kryptik",
+    "wacatac", "sabsik", "artemis", "malware", "dynamer", "deepscan",
+    "reputation", "agent", "cloud", "lazy", "packed", "obfuscated",
+]
+
+[report]
+# Carpeta de los informes. Relativa a vtscan.py.
+output_dir = "reports"
+# Abrir el informe HTML al terminar.
+open_html = true
+# Separador del CSV. ";" es el que espera Excel en español.
+csv_delimiter = ";"
+# Motores cuyas detecciones salen con nombre en el informe.
+main_engines = [
+    "Microsoft", "Kaspersky", "ESET-NOD32", "BitDefender", "Avast", "Sophos",
+    "Malwarebytes", "DrWeb", "Fortinet", "TrendMicro",
+]
+
+[defender]
+# true: Defender solo informa (-DisableRemediation) y no mueve nada a cuarentena.
+report_only = true
