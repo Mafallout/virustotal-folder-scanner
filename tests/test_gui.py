@@ -10,7 +10,7 @@ from fakes import Factory, no_defender, sha_of
 from vtscanner.gui import dialogs, main_window, theme
 from vtscanner.gui.bridge import QtUI, ScanWorker
 from vtscanner.gui.dialogs import ApiKeyDialog, UploadDialog
-from vtscanner.gui.main_window import MainWindow, format_wait, step_for
+from vtscanner.gui.main_window import MainWindow, ProgressPage, format_wait, step_for
 from vtscanner.gui.results import ResultsFilter, ResultsModel
 from vtscanner.pipeline import ScanOptions
 from vtscanner.report import ReportRow
@@ -65,6 +65,38 @@ def test_results_sort_and_filter(qtbot):
     proxy.set_levels(set(Level))
     proxy.set_text("C.EXE")
     assert proxy.rowCount() == 1
+
+
+def test_results_name_the_engines(qtbot):
+    row = report_row(Level.LOW, "voz.dll", 1)
+    row.detected_by = [("Cynet", "Malicious (score: 100)")]
+    model = ResultsModel([row, report_row(Level.CLEAN, "a.dll", 0)])
+    assert model.index(0, 3).data() == "Cynet"
+    assert model.index(0, 3).data(Qt.ItemDataRole.ToolTipRole) == "Cynet: Malicious (score: 100)"
+    assert model.index(1, 3).data() == ""
+    proxy = ResultsFilter()
+    proxy.setSourceModel(model)
+    proxy.set_text("cynet")
+    assert proxy.rowCount() == 1
+
+
+def test_live_list_puts_findings_on_top(qtbot):
+    page = ProgressPage()
+    qtbot.addWidget(page)
+    page.reset(ScanOptions(target="C:\\juego"))
+    page.on_result("a.dll", Level.CLEAN, "VT: 0 de 70", [])
+    page.on_result("voz.dll", Level.LOW, "probable falso positivo", ["Cynet"])
+    page.on_result("b.dll", Level.CLEAN, "VT: 0 de 70", [])
+    page.on_result("malo.exe", Level.HIGH, "VT: 5 de 70", ["Kaspersky", "ESET-NOD32", "Avast", "Cynet"])
+    texts = [page.findings.item(i).text() for i in range(page.findings.count())]
+    assert texts == [
+        "Alto   malo.exe   (detectado por Kaspersky, ESET-NOD32, Avast y 1 más)",
+        "Bajo   voz.dll   (detectado por Cynet)",
+        "Limpio   b.dll",
+        "Limpio   a.dll",
+    ]
+    assert "Detectado por: Kaspersky, ESET-NOD32, Avast, Cynet" in page.findings.item(0).toolTip()
+    assert page.counter_labels[Level.CLEAN].text() == "Limpio 2"
 
 
 def test_upload_dialog_selection(qtbot):
@@ -157,7 +189,7 @@ def test_worker_runs_a_scan(qtbot, cfg, tmp_path):
         scanner_kwargs={"client_factory": Factory(known), "defender_runner": no_defender},
     )
     levels = []
-    worker.ui.result_sig.connect(lambda rel, level, reason: levels.append(level))
+    worker.ui.result_sig.connect(lambda rel, level, reason, engines: levels.append(level))
     with qtbot.waitSignal(worker.finished_ok, timeout=20000) as blocker:
         worker.start()
     assert blocker.args[0].complete

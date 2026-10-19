@@ -43,11 +43,13 @@ def test_upload_list_with_brackets_and_no_terminal():
 
 def test_live_results_only_show_what_matters():
     ui, out = make_ui()
-    ui.result("Programa [beta]\\bueno.dll", Level.CLEAN, "VT: 0 de 70")
-    ui.result("voz.dll", Level.LOW, "probable falso positivo")
-    ui.result("Programa [beta]\\malo.exe", Level.HIGH, "VT: 5 de 70 motores lo detectan")
+    ui.result("Programa [beta]\\bueno.dll", Level.CLEAN, "VT: 0 de 70", [])
+    ui.result("voz.dll", Level.LOW, "probable falso positivo", ["Cynet"])
+    engines = ["Kaspersky", "ESET-NOD32", "Avast", "Cynet", "Skyhigh"]
+    ui.result("Programa [beta]\\malo.exe", Level.HIGH, "VT: 5 de 70 motores lo detectan", engines)
     text = out.getvalue()
     assert "Alto: Programa [beta]\\malo.exe" in text
+    assert "(Kaspersky, ESET-NOD32, Avast y 2 más)" in text
     assert "bueno.dll" not in text and "voz.dll" not in text
 
 
@@ -55,5 +57,5 @@ def test_progress_detail_with_brackets():
     ui, _ = make_ui()
     ui.task_start("Subiendo", 1, unit="files")
     ui.task_update(completed=0, detail="subiendo [beta] App.exe")
-    ui.waiting(75, "límite de 4 peticiones por minuto")
+    ui.waiting(75, "esperando turno (máximo 4 consultas por minuto)")
     ui.task_end("hecho")

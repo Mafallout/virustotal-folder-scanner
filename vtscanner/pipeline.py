@@ -59,6 +59,7 @@ STATUS_SUMMARY = {
     "error": "sin comprobar",
 }
 CHECK_DELAYS = (120, 240, 480, 900)  # esperas entre comprobaciones de un análisis
+DEFENDER_ENGINE = "Defender (este PC)"
 LOG_LEVELS = {"warn": logging.WARNING, "error": logging.ERROR}
 
 
@@ -555,6 +556,11 @@ class Scanner:
         """Devuelve True si no queda nada pendiente de VirusTotal."""
         checks = self._pending_checks(state)
         self._estimate(lookups, state)
+        # Lo que ya estaba en la caché sale en la lista en vivo desde el principio
+        queued = set(lookups) | set(checks) | state.trusted_skip
+        for sha in state.groups:
+            if sha not in queued:
+                self._announce(sha, state)
         needed = len(lookups) + len(checks)
         remaining = self.limiter.remaining_today()
         if options.all_files and needed > remaining:
@@ -628,8 +634,10 @@ class Scanner:
                     continue
                 else:
                     return True
+                name = os.path.basename(state.groups[item][0].entry.path)
                 try:
                     if kind == "check":
+                        self.ui.task_update(detail=f"recogiendo el análisis de {name}")
                         finished = self._do_check(client, item, checks[item])
                         if finished:
                             self._announce(item, state)
@@ -647,6 +655,7 @@ class Scanner:
                             checks[sha] = _Check(analysis_id, self.clock() + first, 0)
                             total += 1
                     else:
+                        self.ui.task_update(detail=f"consultando {name}")
                         self._do_lookup(client, item)
                         lookups.popleft()
                         done += 1
@@ -689,12 +698,7 @@ class Scanner:
                     state.errors[item] = str(exc)
                     done += 1
                     log.warning("Error de VirusTotal con %s: %s", item, exc)
-                self.ui.task_update(
-                    completed=done,
-                    total=total,
-                    detail=f"peticiones: {self.limiter.requests_this_run} · quedan hoy: "
-                    f"{self.limiter.remaining_today()}",
-                )
+                self.ui.task_update(completed=done, total=total)
                 self._report_quota()
         finally:
             self._end()
@@ -704,11 +708,12 @@ class Scanner:
         results = state.groups.get(sha)
         if not results:
             return
-        verdict, _, _ = self._vt_verdict(sha, self.db.get_vt_record(sha), state)
+        verdict, report, _ = self._vt_verdict(sha, self.db.get_vt_record(sha), state)
         rel_path = results[0].entry.rel_path
         if len(results) > 1:
             rel_path += f" (y {len(results) - 1} copia(s))"
-        self.ui.result(rel_path, verdict.level, verdict.reason)
+        engines = [name for name, _ in self._detected_by(report)] if report else []
+        self.ui.result(rel_path, verdict.level, verdict.reason, engines)
 
     @staticmethod
     def _drop(
@@ -858,6 +863,18 @@ class Scanner:
         others = sorted(report.detections.items(), key=lambda kv: (kv[1][0] != "malicious", kv[0].lower()))
         return [(name, result) for name, (_, result) in others[:3]]
 
+    def _detected_by(self, report: FileReport) -> list[tuple[str, str]]:
+        """Todos los motores que lo detectan: primero los que lo dan por malicioso y,
+        dentro de esos, los principales del informe."""
+        main = [e.lower() for e in self.cfg.report.main_engines]
+
+        def key(item: tuple[str, tuple[str, str]]) -> tuple[bool, int, str]:
+            name, (category, _) = item
+            rank = main.index(name.lower()) if name.lower() in main else len(main)
+            return category != "malicious", rank, name.lower()
+
+        return [(name, result) for name, (_, result) in sorted(report.detections.items(), key=key)]
+
     def _vt_verdict(self, sha: str, record: VtRecord | None, state: _RunState) -> tuple[Verdict, FileReport | None, str]:
         if sha in state.trusted_skip:
             return Verdict(Level.SKIPPED, "Firmado por un fabricante de confianza; no consultado (skip_trusted_signed)"), None, "omitido"
@@ -895,6 +912,11 @@ class Scanner:
                 used_defender.add(key)
                 return classify_defender(name)
             return None
+
+        def defender_engine(dv: Verdict | None, blocked: bool) -> list[tuple[str, str]]:
+            if dv is not None:
+                return [(DEFENDER_ENGINE, dv.label)]
+            return [(DEFENDER_ENGINE, "bloqueó la lectura del archivo")] if blocked else []
 
         hashed_paths = {r.entry.path for r in state.hashes}
         for r in state.hashes:
@@ -934,11 +956,13 @@ class Scanner:
                     row.malicious, row.suspicious, row.total = report.malicious, report.suspicious, report.total
                     row.main_detections = self._main_detections(report)
                     row.detections_count = len(report.detections)
+                    row.detected_by = self._detected_by(report)
                     row.first_seen = report.first_submission_date
                     row.last_analysis = report.last_analysis_date
                 if records.get(r.sha256) is not None and records[r.sha256].state != "not_found":
                     row.vt_link = gui_url(r.sha256)
             row.level, row.reason, row.label = verdict.level, verdict.reason, verdict.label
+            row.detected_by = defender_engine(dv, r.defender_blocked) + row.detected_by
             rows.append(row)
 
         # Archivos detectados pero sin hash (recorrido interrumpido o sin procesar)
@@ -967,7 +991,10 @@ class Scanner:
                 verdict = combine([Verdict(Level.SKIPPED, text), dv])
                 state_text = "omitido"
             rows.append(
-                ReportRow(verdict.level, verdict.reason, verdict.label, s.path, s.rel_path, state_text, size=s.size)
+                ReportRow(
+                    verdict.level, verdict.reason, verdict.label, s.path, s.rel_path, state_text, size=s.size,
+                    detected_by=defender_engine(dv, s.reason == "defender_blocked"),
+                )
             )
 
         # Archivos que Defender bloqueó en ejecuciones anteriores y ya no están (cuarentena)
@@ -975,7 +1002,8 @@ class Scanner:
             if kind != "defender_blocked" or path_key(path) in seen_paths:
                 continue
             seen_paths.add(path_key(path))
-            verdict = combine([defender_blocked_verdict(), defender_verdict(path)])
+            dv = defender_verdict(path)
+            verdict = combine([defender_blocked_verdict(), dv])
             rows.append(
                 ReportRow(
                     verdict.level,
@@ -984,6 +1012,7 @@ class Scanner:
                     path,
                     os.path.relpath(path, root) if path_key(path).startswith(path_key(root)) else path,
                     "bloqueado por Defender",
+                    detected_by=defender_engine(dv, True),
                 )
             )
 
@@ -1006,7 +1035,12 @@ class Scanner:
                 if inners:
                     reason += f" (dentro del comprimido: {', '.join(inners)})"
                 rel = os.path.relpath(path, root) if key.startswith(path_key(root)) else path
-                rows.append(ReportRow(verdict.level, reason, verdict.label, path, rel, "detectado por Defender"))
+                rows.append(
+                    ReportRow(
+                        verdict.level, reason, verdict.label, path, rel, "detectado por Defender",
+                        detected_by=defender_engine(verdict, False),
+                    )
+                )
         return rows
 
     def _summary(

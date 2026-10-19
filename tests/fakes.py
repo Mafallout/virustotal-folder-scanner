@@ -37,8 +37,8 @@ class RecordingUI(BaseUI):
     def estimate(self, needed, remaining, minutes):
         self.estimates.append((needed, remaining, minutes))
 
-    def result(self, rel_path, level, reason):
-        self.results.append((rel_path, level, reason))
+    def result(self, rel_path, level, reason, engines):
+        self.results.append((rel_path, level, reason, engines))
 
     def confirm(self, question, default=False):
         self.messages.append(("confirm", question))

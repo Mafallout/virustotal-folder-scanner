@@ -129,7 +129,7 @@ class RateLimiter:
             oldest_blocking = recent[len(recent) - self.per_minute]
             self._sleep_until(
                 oldest_blocking + WINDOW_SECONDS,
-                f"límite de {self.per_minute} peticiones por minuto",
+                f"esperando turno (máximo {self.per_minute} consultas por minuto)",
                 on_wait,
             )
 

@@ -70,6 +70,33 @@ def test_minor_engine_detection_is_low_named_and_logged(tmp_path, cfg, db, clock
     assert "Peticiones en esta ejecución: 2" in caplog.text
 
 
+def test_engines_are_named_live_and_in_the_rows(tmp_path, cfg, db, clock):
+    folder = tmp_path / "juego"
+    exe = write(folder / "app.exe", MZ + b"app")
+    dll = write(folder / "voz.dll", MZ + b"voz")
+    detections = {
+        "Cynet": ("malicious", "Malicious (score: 100)"),
+        "Kaspersky": ("malicious", "HEUR:Trojan.Win32.Generic"),
+        "Avira": ("suspicious", "HEUR/AGEN.1"),
+    }
+    known = {sha_of(exe): FileReport("", 2, 1, 70, detections), sha_of(dll): FileReport("", 0, 0, 70)}
+    ui = RecordingUI()
+    make_scanner(cfg, db, clock, ui, Factory(known)).run(ScanOptions(target=str(folder)))
+    # Primero los que lo dan por malicioso y, entre ellos, los principales del informe
+    assert [engine for engine, _ in rows_by_name(ui)["app.exe"].detected_by] == ["Kaspersky", "Cynet", "Avira"]
+    assert {path: engines for path, _, _, engines in ui.results} == {
+        "app.exe": ["Kaspersky", "Cynet", "Avira"],
+        "voz.dll": [],
+    }
+
+    # Con todo en la caché también se avisa de cada archivo, sin gastar consultas
+    factory = Factory(known)
+    ui2 = RecordingUI()
+    make_scanner(cfg, db, clock, ui2, factory).run(ScanOptions(target=str(folder)))
+    assert factory.calls == ["users"]
+    assert sorted(path for path, *_ in ui2.results) == ["app.exe", "voz.dll"]
+
+
 def test_quota_exhaustion_pauses_and_resume_continues(tmp_path, cfg, db, clock):
     cfg.virustotal.daily_limit = 4
     folder = tmp_path / "juego"
@@ -181,7 +208,9 @@ def test_defender_results_are_merged(tmp_path, cfg, db, clock):
     )
     rows = {r.rel_path: r for r in ui.summary[0]}
     assert rows[os.path.join("bin", "engine.dll")].level == Level.CRITICAL
+    assert rows[os.path.join("bin", "engine.dll")].detected_by == [("Defender (este PC)", "Trojan:Win32/RedLine.A")]
     assert rows["extras.zip"].level == Level.MEDIUM
+    assert rows["extras.zip"].detected_by == [("Defender (este PC)", "HackTool:Win32/Crack")]
     assert "herramienta.exe" in rows["extras.zip"].reason
 
 
@@ -202,6 +231,7 @@ def test_defender_blocked_file_is_remembered(tmp_path, cfg, db, clock, monkeypat
     outcome = make_scanner(cfg, db, clock, ui, Factory()).run(ScanOptions(target=str(folder)))
     rows = {r.rel_path: r for r in ui.summary[0]}
     assert rows["malo.exe"].level == Level.HIGH
+    assert rows["malo.exe"].detected_by == [("Defender (este PC)", "bloqueó la lectura del archivo")]
 
     bad.unlink()  # Defender lo mueve a cuarentena
     clock.now = next_reset(clock.now) + 10

@@ -55,7 +55,7 @@ from ..config import DEFAULT_CONFIG_PATH, Config
 from ..db import Database
 from ..pipeline import ScanOptions, ScanOutcome, format_minutes
 from ..ratelimit import RateLimiter, format_local_time
-from ..report import ReportRow, ReportSummary, human_size, plural
+from ..report import ReportRow, ReportSummary, engines_text, human_size, plural
 from ..ui import UploadCost, UploadItem
 from ..verdict import LEVEL_ORDER, Level
 from ..winutils import open_in_default_app
@@ -441,9 +441,11 @@ class ProgressPage(QWidget):
         counters.addStretch(1)
         layout.addLayout(counters)
 
-        layout.addWidget(plain_label("Lo que merece atención, según llega:"))
+        layout.addWidget(plain_label("Resultados según llegan (lo que merece atención sale arriba):"))
         self.findings = QListWidget()
         self.findings.setAlternatingRowColors(True)
+        self.findings.setUniformItemSizes(True)
+        self.top_count = 0  # cuántos de arriba son de nivel Bajo o más
         layout.addWidget(self.findings, 2)
 
         self.activity_toggle = QToolButton()
@@ -508,6 +510,7 @@ class ProgressPage(QWidget):
         self.counts = {level: 0 for level in LIVE_LEVELS}
         self._paint_counters()
         self.findings.clear()
+        self.top_count = 0
         self.activity.clear()
         self.stop_button.setEnabled(True)
         self.stop_button.setText("Detener")
@@ -577,6 +580,7 @@ class ProgressPage(QWidget):
     def on_task_end(self, summary: object) -> None:
         if self.total:
             self.bar.setValue(1000)
+        self.detail.clear()
         if isinstance(summary, str) and summary:
             self.detail.setText(summary)
             self.add_message(summary, "info")
@@ -587,17 +591,30 @@ class ProgressPage(QWidget):
     def on_quota(self, used: int, limit: int) -> None:
         self.quota_label.setText(f"Consultas hoy: {used} de {limit}")
 
-    def on_result(self, rel_path: str, level: object, reason: str) -> None:
+    def on_result(self, rel_path: str, level: object, reason: str, engines: list[str]) -> None:
         if not isinstance(level, Level):
             return
         if level in self.counts:
             self.counts[level] += 1
             self._paint_counters()
+        text = f"{level.label}   {rel_path}"
+        if engines:
+            text += f"   (detectado por {engines_text(engines)})"
+            reason += "\nDetectado por: " + ", ".join(engines)
+        item = QListWidgetItem(text)
+        item.setData(Qt.ItemDataRole.UserRole, int(level))
+        item.setToolTip(reason)
         if level >= Level.LOW:
-            item = QListWidgetItem(f"{level.label}   {rel_path}")
+            # Arriba, de más a menos grave; el resto, debajo y el último primero
+            row = 0
+            while row < self.top_count and self.findings.item(row).data(Qt.ItemDataRole.UserRole) >= level:
+                row += 1
+            self.top_count += 1
             item.setForeground(level_color(level))
-            item.setToolTip(reason)
-            self.findings.addItem(item)
+        else:
+            row = self.top_count
+            item.setForeground(level_color(level) if level == Level.UNKNOWN else QColor(pick(MUTED)))
+        self.findings.insertItem(row, item)
 
     def add_message(self, text: str, kind: str) -> None:
         self.activity.appendPlainText(f"{datetime.now():%H:%M:%S}  {text}")
@@ -654,7 +671,7 @@ class ResultsPage(QWidget):
         layout.addLayout(chips)
 
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Buscar por ruta, etiqueta, motivo o hash...")
+        self.search.setPlaceholderText("Buscar por ruta, antivirus, etiqueta, motivo o hash...")
         self.search.setClearButtonEnabled(True)
         layout.addWidget(self.search)
 
@@ -679,14 +696,16 @@ class ResultsPage(QWidget):
                 QHeaderView.ResizeMode.Stretch,
                 QHeaderView.ResizeMode.ResizeToContents,
                 QHeaderView.ResizeMode.Interactive,
+                QHeaderView.ResizeMode.Interactive,
                 QHeaderView.ResizeMode.Stretch,
                 QHeaderView.ResizeMode.Interactive,
                 QHeaderView.ResizeMode.ResizeToContents,
             ]
         ):
             header.setSectionResizeMode(column, mode)
-        header.resizeSection(3, 190)
-        header.resizeSection(5, 170)
+        header.resizeSection(3, 160)
+        header.resizeSection(4, 160)
+        header.resizeSection(6, 160)
         self.table.doubleClicked.connect(lambda index: self._open_vt(self._row(index)))
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._context_menu)

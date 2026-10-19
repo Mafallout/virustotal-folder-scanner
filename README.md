@@ -25,7 +25,7 @@ setx VT_API_KEY "tu_clave"
 
 Haz doble clic en `vtscan_gui.pyw`. Arrastra una carpeta (o elígela), marca las opciones y pulsa **Analizar**.
 
-Mientras analiza verás el progreso y lo que va encontrando. Con **Detener** se guarda lo hecho y puedes continuar más tarde. Al terminar tienes la tabla de resultados con filtros y buscador; con doble clic abres un archivo en VirusTotal, y los botones de abajo abren el informe HTML y el CSV.
+Mientras analiza verás cada archivo según llega, con lo que merece atención arriba y qué antivirus lo detecta. Con **Detener** se guarda lo hecho y puedes continuar más tarde. Al terminar tienes la tabla de resultados con filtros y buscador; con doble clic abres un archivo en VirusTotal, y los botones de abajo abren el informe HTML y el CSV.
 
 **Calcular coste** te dice cuántas consultas y cuánto tiempo hará falta, sin gastar ninguna.
 

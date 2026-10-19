@@ -75,6 +75,6 @@ def test_live_hooks(tmp_path, cfg, db, clock):
     ui = RecordingUI()
     make_scanner(cfg, db, clock, ui, Factory()).run(ScanOptions(target=str(folder)))
     assert ui.estimates == [(2, 500, 0.5)]
-    assert [level for _, level, _ in ui.results] == [Level.UNKNOWN, Level.UNKNOWN]
-    assert any("(y 1 copia(s))" in path for path, _, _ in ui.results)
+    assert [level for _, level, _, _ in ui.results] == [Level.UNKNOWN, Level.UNKNOWN]
+    assert any("(y 1 copia(s))" in path for path, _, _, _ in ui.results)
     assert ui.quotas[-1] == (2, 500)  # consultar la cuota no cuenta

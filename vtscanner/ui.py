@@ -25,7 +25,7 @@ from rich.prompt import Confirm, Prompt
 from rich.table import Table
 from rich.text import Text
 
-from .report import SIGNAL_LABELS, ReportRow, ReportSummary, human_size, plural, sort_key
+from .report import SIGNAL_LABELS, ReportRow, ReportSummary, engines_text, human_size, plural, sort_key
 from .verdict import LEVEL_ORDER, Level
 
 
@@ -76,8 +76,8 @@ class BaseUI:
     def estimate(self, needed: int, remaining: int, minutes: float) -> None:
         """Consultas que hacen falta, las que quedan hoy y el tiempo aproximado."""
 
-    def result(self, rel_path: str, level: Level, reason: str) -> None:
-        """Resultado de un archivo recién consultado (en vivo)."""
+    def result(self, rel_path: str, level: Level, reason: str, engines: list[str]) -> None:
+        """Resultado de un archivo recién consultado (en vivo) y los motores que lo detectan."""
 
     def confirm(self, question: str, default: bool = False) -> bool:
         return default
@@ -220,10 +220,12 @@ class ConsoleUI(BaseUI):
             self._auto_task = True
         self.task_update(detail=text)
 
-    def result(self, rel_path: str, level: Level, reason: str) -> None:
+    def result(self, rel_path: str, level: Level, reason: str, engines: list[str]) -> None:
         """En la terminal solo se avisa en vivo de lo que merece atención."""
         if level < Level.MEDIUM:
             return
+        if engines:
+            reason += f" ({engines_text(engines)})"
         target = self._progress.console if self._progress else self.console
         target.print(
             Text.assemble((f"{level.label}: ", LEVEL_STYLES[level]), rel_path, (f"  {reason}", "grey62"))

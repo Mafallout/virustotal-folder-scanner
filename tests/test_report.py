@@ -5,6 +5,7 @@ import io
 from vtscanner.report import (
     ReportRow,
     ReportSummary,
+    engines_text,
     human_size,
     report_basename,
     write_csv,
@@ -79,6 +80,14 @@ def test_html_dry_run_status(tmp_path):
     path = tmp_path / "r.html"
     write_html([row(Level.PENDING, "a.exe")], summary(complete=False, pending=1, dry_run=True), path)
     assert "Simulación" in path.read_text(encoding="utf-8")
+
+
+def test_engines_text():
+    assert engines_text([]) == ""
+    assert engines_text(["Cynet"]) == "Cynet"
+    assert engines_text(["Kaspersky", "Cynet"]) == "Kaspersky y Cynet"
+    assert engines_text(["Kaspersky", "ESET-NOD32", "Cynet"]) == "Kaspersky, ESET-NOD32 y Cynet"
+    assert engines_text(["A", "B", "C", "D", "E"]) == "A, B, C y 2 más"
 
 
 def test_human_size():

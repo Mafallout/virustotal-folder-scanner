@@ -7,11 +7,11 @@ from typing import Any
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QPersistentModelIndex, QSortFilterProxyModel, Qt
 from PySide6.QtGui import QFont
 
-from ..report import SIGNAL_LABELS, ReportRow, human_size
+from ..report import SIGNAL_LABELS, ReportRow, engines_text, human_size
 from ..verdict import LEVEL_ORDER, Level
 from .theme import level_color
 
-COLUMNS = ["Nivel", "Archivo", "Detecciones", "Etiqueta", "Motivo", "Firma y señales", "Tamaño"]
+COLUMNS = ["Nivel", "Archivo", "Detecciones", "Antivirus", "Etiqueta", "Motivo", "Firma y señales", "Tamaño"]
 SORT_ROLE = Qt.ItemDataRole.UserRole + 1
 ROW_ROLE = Qt.ItemDataRole.UserRole + 2
 
@@ -28,7 +28,7 @@ def signature_and_signals(row: ReportRow) -> str:
 
 def search_text(row: ReportRow) -> str:
     fields = [row.rel_path, row.label, row.reason, row.sha256 or "", row.signature]
-    fields += [result for _, result in row.main_detections]
+    fields += [f"{engine} {result}" for engine, result in row.detected_by]
     return " ".join(fields).lower()
 
 
@@ -77,7 +77,7 @@ class ResultsModel(QAbstractTableModel):
             return font
         if role == Qt.ItemDataRole.ToolTipRole:
             return self._tooltip(row, column)
-        if role == Qt.ItemDataRole.TextAlignmentRole and column in (2, 6):
+        if role == Qt.ItemDataRole.TextAlignmentRole and column in (2, 7):
             return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         return None
 
@@ -90,12 +90,14 @@ class ResultsModel(QAbstractTableModel):
         if column == 2:
             return "-" if row.total is None else f"{row.malicious or 0}/{row.suspicious or 0} de {row.total}"
         if column == 3:
+            return engines_text([engine for engine, _ in row.detected_by])
+        if column == 4:
             if row.label:
                 return row.label
             return row.main_detections[0][1] if row.main_detections else ""
-        if column == 4:
-            return row.reason
         if column == 5:
+            return row.reason
+        if column == 6:
             return signature_and_signals(row)
         return human_size(row.size)
 
@@ -105,7 +107,7 @@ class ResultsModel(QAbstractTableModel):
             return (LEVEL_ORDER.index(row.level), -(row.malicious or 0), -(row.suspicious or 0), row.rel_path.lower())
         if column == 2:
             return (row.malicious if row.total is not None else -1, row.suspicious or 0)
-        if column == 6:
+        if column == 7:
             return row.size if row.size is not None else -1
         return ResultsModel._text(row, column).lower()
 
@@ -113,11 +115,11 @@ class ResultsModel(QAbstractTableModel):
     def _tooltip(row: ReportRow, column: int) -> str:
         if column == 1:
             return row.path
-        if column == 3 and row.main_detections:
-            return "\n".join(f"{engine}: {result}" for engine, result in row.main_detections)
-        if column == 4:
-            return row.reason
-        if column == 5:
+        if column == 3:
+            return "\n".join(f"{engine}: {result}" for engine, result in row.detected_by)
+        if column in (4, 5):
+            return ResultsModel._text(row, column)
+        if column == 6:
             return signature_and_signals(row)
         return ""
 

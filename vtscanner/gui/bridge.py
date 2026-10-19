@@ -36,7 +36,7 @@ class QtUI(QObject, BaseUI):
     waiting_sig = Signal(float, str)
     quota_sig = Signal(int, int)
     estimate_sig = Signal(int, int, float)
-    result_sig = Signal(str, object, str)
+    result_sig = Signal(str, object, str, object)
     summary_sig = Signal(object, object, object)
     confirm_requested = Signal(str, bool)
     uploads_requested = Signal(object, object)
@@ -81,8 +81,8 @@ class QtUI(QObject, BaseUI):
     def estimate(self, needed: int, remaining: int, minutes: float) -> None:
         self.estimate_sig.emit(needed, remaining, minutes)
 
-    def result(self, rel_path: str, level: Level, reason: str) -> None:
-        self.result_sig.emit(rel_path, level, reason)
+    def result(self, rel_path: str, level: Level, reason: str, engines: list[str]) -> None:
+        self.result_sig.emit(rel_path, level, reason, engines)
 
     def show_summary(self, rows: list[ReportRow], summary: ReportSummary, report_paths: list[Path]) -> None:
         self.summary_sig.emit(rows, summary, report_paths)

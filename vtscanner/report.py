@@ -40,6 +40,7 @@ class ReportRow:
     total: int | None = None
     main_detections: list[tuple[str, str]] = field(default_factory=list)
     detections_count: int = 0
+    detected_by: list[tuple[str, str]] = field(default_factory=list)
     signature: str = ""
     signals: list[str] = field(default_factory=list)
     first_seen: int | None = None
@@ -85,6 +86,15 @@ def sort_key(row: ReportRow) -> tuple[int, int, int, str]:
 def plural(n: int, singular: str, plural_form: str | None = None) -> str:
     """'1 archivo', '3 archivos'."""
     return f"{n} {singular if n == 1 else (plural_form or singular + 's')}"
+
+
+def engines_text(names: list[str], shown: int = 3) -> str:
+    """'Cynet', 'Kaspersky y Cynet' o 'Kaspersky, ESET-NOD32, Cynet y 4 más'."""
+    if len(names) > shown:
+        return ", ".join(names[:shown]) + f" y {len(names) - shown} más"
+    if len(names) > 1:
+        return ", ".join(names[:-1]) + " y " + names[-1]
+    return "".join(names)
 
 
 def human_size(size: int | None) -> str:
