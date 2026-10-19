@@ -1,0 +1,25 @@
+vtscan usa estas piezas de terceros. Todas son software libre y gratuito.
+
+Python (Python Software Foundation License)
+  https://www.python.org/
+
+Qt y PySide6 (LGPL versión 3)
+  https://www.qt.io/  y  https://doc.qt.io/qtforpython/
+  Licencia: https://www.gnu.org/licenses/lgpl-3.0.html
+  Código fuente de Qt: https://download.qt.io/
+  En la versión empaquetada, las bibliotecas de Qt van como archivos .dll
+  separados dentro de la carpeta _internal y se pueden sustituir por otras
+  versiones compatibles.
+
+requests (Apache 2.0)            https://github.com/psf/requests
+requests-toolbelt (Apache 2.0)   https://github.com/requests/toolbelt
+urllib3 (MIT)                    https://github.com/urllib3/urllib3
+certifi (MPL 2.0)                https://github.com/certifi/python-certifi
+idna (BSD)                       https://github.com/kjd/idna
+charset-normalizer (MIT)         https://github.com/jawah/charset_normalizer
+rich (MIT)                       https://github.com/Textualize/rich
+markdown-it-py (MIT)             https://github.com/executablebooks/markdown-it-py
+mdurl (MIT)                      https://github.com/executablebooks/mdurl
+Pygments (BSD)                   https://github.com/pygments/pygments
+PyInstaller (GPL con excepción para el programa empaquetado)
+                                 https://pyinstaller.org/

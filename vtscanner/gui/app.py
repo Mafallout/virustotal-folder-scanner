@@ -7,7 +7,7 @@ import os
 import sys
 from types import TracebackType
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QLibraryInfo, QLocale, QTimer, QTranslator
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from .. import __version__
@@ -49,6 +49,11 @@ def main(argv: list[str] | None = None) -> int:
     app.setOrganizationName("vtscan")
     app.setApplicationName("vtscan")
     app.setWindowIcon(theme.app_icon())
+    # Botones estándar de Qt (Sí, No, Cancelar...) en español
+    translator = QTranslator(app)
+    translations = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
+    if translator.load(QLocale("es_ES"), "qtbase", "_", translations):
+        app.installTranslator(translator)
     try:
         cfg, warnings = load_config()
     except ConfigError as exc:
@@ -56,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     setup_logging(cfg, verbose=False)
     sys.excepthook = _excepthook
-    log.info("Inicio de la ventana (vtscan %s)", __version__)
+    log.info("Inicio de la ventana (vtscan %s, estilo %s)", __version__, app.style().name())
 
     # Prueba de arranque del .exe: abre la ventana, guarda una captura y sale
     screenshot = os.environ.get("VTSCAN_SCREENSHOT")

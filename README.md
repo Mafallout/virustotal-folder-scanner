@@ -4,6 +4,8 @@ Programa para Windows que revisa una carpeta en busca de malware con VirusTotal.
 
 Está pensado para carpetas grandes, como programas descargados de fuentes no oficiales, y funciona con la cuenta gratuita de VirusTotal.
 
+![Pantalla de resultados](docs/captura.png)
+
 ## Instalación
 
 Necesitas Windows 10 u 11 y Python 3.11 o superior. En la carpeta del proyecto:
@@ -13,15 +15,21 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-También necesitas una clave de VirusTotal, que es gratis. Crea una cuenta en [virustotal.com](https://www.virustotal.com), copia la API key de tu perfil y guárdala con este comando (después abre una terminal nueva):
+También necesitas una clave de VirusTotal, que es gratis: crea una cuenta en [virustotal.com](https://www.virustotal.com) y copia la API key de tu perfil. La ventana te la pide la primera vez y la guarda en un archivo `.env` junto al programa, que nunca se sube al repositorio. Si solo usas la terminal, guárdala con este comando y abre una terminal nueva:
 
 ```powershell
 setx VT_API_KEY "tu_clave"
 ```
 
-Si lo prefieres, crea un archivo `.env` junto a `vtscan.py` con la línea `VT_API_KEY=tu_clave`. Ese archivo no se sube al repositorio.
+## Uso con ventana
 
-## Uso
+Haz doble clic en `vtscan_gui.pyw`. Arrastra una carpeta (o elígela), marca las opciones y pulsa **Analizar**.
+
+Mientras analiza verás el progreso y lo que va encontrando. Con **Detener** se guarda lo hecho y puedes continuar más tarde. Al terminar tienes la tabla de resultados con filtros y buscador; con doble clic abres un archivo en VirusTotal, y los botones de abajo abren el informe HTML y el CSV.
+
+**Calcular coste** te dice cuántas consultas y cuánto tiempo hará falta, sin gastar ninguna.
+
+## Uso desde la terminal
 
 ```powershell
 .\.venv\Scripts\python.exe vtscan.py "D:\Descargas\Programa"
@@ -42,7 +50,7 @@ Con `-h` ves todas.
 
 La versión gratuita de VirusTotal deja hacer 4 consultas por minuto y 500 al día. Una carpeta con 250 ejecutables tarda alrededor de una hora la primera vez. El programa espera solo y guarda cada respuesta para no repetir consultas.
 
-Si se acaban las consultas del día, guarda lo que lleva. Al día siguiente sigues con `--resume`, o lanzas el análisis con `--wait` para que espere y continúe solo.
+Si se acaban las consultas del día, guarda lo que lleva y al día siguiente continúas (botón **Continuar** en la ventana, o `--resume` en la terminal). También puedes marcar que espere y siga solo (`--wait`).
 
 ## Cómo leer el informe
 
@@ -54,9 +62,18 @@ Cada archivo sale con un nivel y el motivo:
 - Desconocido: VirusTotal no lo tiene. No quiere decir que sea seguro.
 - Limpio: ningún antivirus lo detecta.
 
-También pueden salir archivos pendientes (aún sin consultar) u omitidos (no se pudieron revisar, por ejemplo por ser demasiado grandes). Desde el informe puedes abrir la página de cada archivo en VirusTotal.
+También pueden salir archivos pendientes (aún sin consultar) u omitidos (no se pudieron revisar, por ejemplo por ser demasiado grandes).
 
-Una advertencia sobre `--upload`: lo que subes a VirusTotal lo pueden descargar otros investigadores, así que no subas archivos personales.
+Una advertencia sobre la subida de archivos: lo que subes a VirusTotal lo pueden descargar otros investigadores, así que no subas archivos personales.
+
+## Crear el .exe
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+powershell -ExecutionPolicy Bypass -File .\build_exe.ps1
+```
+
+Genera `dist\vtscan-0.2.0-windows.zip` (unos 35 MB). Descomprímelo donde quieras y abre `vtscan.exe`; la caché y los informes se guardan dentro de esa misma carpeta. Como el .exe no lleva firma digital (cuesta dinero), la primera vez Windows puede avisar: pulsa "Más información" y luego "Ejecutar de todas formas".
 
 ## Configuración
 
