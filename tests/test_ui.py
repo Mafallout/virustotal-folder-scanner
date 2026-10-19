@@ -41,6 +41,16 @@ def test_upload_list_with_brackets_and_no_terminal():
     assert BRACKETS in out.getvalue()
 
 
+def test_live_results_only_show_what_matters():
+    ui, out = make_ui()
+    ui.result("Programa [beta]\\bueno.dll", Level.CLEAN, "VT: 0 de 70")
+    ui.result("voz.dll", Level.LOW, "probable falso positivo")
+    ui.result("Programa [beta]\\malo.exe", Level.HIGH, "VT: 5 de 70 motores lo detectan")
+    text = out.getvalue()
+    assert "Alto: Programa [beta]\\malo.exe" in text
+    assert "bueno.dll" not in text and "voz.dll" not in text
+
+
 def test_progress_detail_with_brackets():
     ui, _ = make_ui()
     ui.task_start("Subiendo", 1, unit="files")

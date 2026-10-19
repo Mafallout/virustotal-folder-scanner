@@ -5,15 +5,14 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-import re
-import time
 from datetime import datetime
 from pathlib import Path
 
 from rich.markup import escape
 
 from . import __version__
-from .config import PROJECT_DIR, Config, ConfigError, load_config
+from .bootstrap import clean_path, load_api_key, setup_logging
+from .config import ConfigError, load_config
 from .db import Database
 from .pipeline import ScanOptions, Scanner
 from .ui import ConsoleUI
@@ -91,63 +90,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--version", action="version", version=f"vtscan {__version__}", help="muestra la versión y sale"
     )
     return parser
-
-
-def clean_path(raw: str) -> str:
-    """Arregla rutas que llegan mal desde la terminal, como "D:\\Juegos\\" (que
-    llega con una comilla al final) o "D:" sin barra."""
-    path = raw.strip().strip('"').strip()
-    if re.fullmatch(r"[A-Za-z]:", path):
-        path += "\\"
-    return path
-
-
-def load_api_key() -> str | None:
-    key = os.environ.get("VT_API_KEY", "").strip()
-    if key:
-        return key
-    env_file = PROJECT_DIR / ".env"
-    try:
-        lines = env_file.read_text(encoding="utf-8-sig").splitlines()
-    except OSError:
-        return None
-    for line in lines:
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        name, value = line.split("=", 1)
-        name = name.strip()
-        if name.startswith("export "):
-            name = name[len("export ") :].strip()
-        if name == "VT_API_KEY":
-            value = value.strip().strip('"').strip("'").strip()
-            if value:
-                return value
-    return None
-
-
-def setup_logging(cfg: Config, verbose: bool) -> Path | None:
-    try:
-        cfg.logs_path.mkdir(parents=True, exist_ok=True)
-        old_logs = sorted(cfg.logs_path.glob("vtscan_*.log"))
-        for old in old_logs[:-29]:
-            try:
-                old.unlink()
-            except OSError:
-                pass
-        path = cfg.logs_path / f"vtscan_{time.strftime('%Y%m%d-%H%M%S')}.log"
-        handler = logging.FileHandler(path, encoding="utf-8")
-    except OSError:
-        return None
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
-    # Solo el logger del programa: así no se cuela nada de urllib3 (que podría llevar la clave en la URL)
-    logger = logging.getLogger("vtscanner")
-    for old_handler in list(logger.handlers):
-        logger.removeHandler(old_handler)
-        old_handler.close()
-    logger.setLevel(logging.DEBUG if verbose else logging.INFO)
-    logger.addHandler(handler)
-    return path
 
 
 def resolve_options(

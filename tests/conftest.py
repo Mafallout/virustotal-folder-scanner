@@ -48,6 +48,17 @@ def db(cfg: Config, clock: FakeClock):
     d.close()
 
 
+@pytest.fixture
+def no_api_key(monkeypatch, tmp_path):
+    """Sin clave: ni variable de entorno ni .env (se buscan en una carpeta temporal)."""
+    from vtscanner import bootstrap
+
+    monkeypatch.setattr(bootstrap, "PROJECT_DIR", tmp_path)
+    monkeypatch.setattr(bootstrap, "writable_base", lambda: tmp_path)
+    monkeypatch.delenv("VT_API_KEY", raising=False)
+    return tmp_path
+
+
 def write(path: Path, data: bytes = b"x" * 100) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)

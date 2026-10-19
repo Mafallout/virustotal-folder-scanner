@@ -6,6 +6,7 @@ from __future__ import annotations
 import logging
 import math
 import os
+import threading
 import time
 from collections import Counter, deque
 from dataclasses import dataclass, field
@@ -162,6 +163,12 @@ def format_minutes(minutes: float) -> str:
     return f"{hours} h {rest:02d} min"
 
 
+class ScanCancelled(KeyboardInterrupt):
+    """El usuario ha pedido detener el análisis (botón Detener). Hereda de
+    KeyboardInterrupt para que se trate igual que Ctrl+C: se guarda lo hecho y
+    se genera un informe parcial."""
+
+
 class Scanner:
     def __init__(
         self,
@@ -173,6 +180,7 @@ class Scanner:
         clock: Callable[[], float] = time.time,
         sleeper: Callable[[float], None] = time.sleep,
         defender_runner: Callable[..., DefenderResult] = defender_mod.run_scan,
+        cancel_event: threading.Event | None = None,
     ) -> None:
         self.cfg = cfg
         self.ui = ui
@@ -181,11 +189,35 @@ class Scanner:
         self.client_factory = client_factory
         self.clock = clock
         self.sleeper = sleeper
+        self.cancel_event = cancel_event
         self.defender_runner = defender_runner
         self.classifier = Classifier(cfg.verdict)
         self.limiter = RateLimiter(
-            self.db, cfg.virustotal.requests_per_minute, cfg.virustotal.daily_limit, clock, sleeper
+            self.db, cfg.virustotal.requests_per_minute, cfg.virustotal.daily_limit, clock, self._sleep
         )
+
+    # ---- cancelación --------------------------------------------------------
+
+    def _check_cancel(self) -> None:
+        if self.cancel_event is not None and self.cancel_event.is_set():
+            raise ScanCancelled()
+
+    def _sleep(self, seconds: float) -> None:
+        """Las esperas del limitador se cortan en cuanto se pide detener."""
+        if self.cancel_event is not None and self.sleeper is time.sleep:
+            if self.cancel_event.wait(max(0.0, seconds)):
+                raise ScanCancelled()
+            return
+        self.sleeper(seconds)
+        self._check_cancel()
+
+    def _progress(self, **kwargs: Any) -> None:
+        """Actualiza el progreso; de paso, es un punto donde se puede detener."""
+        self._check_cancel()
+        self.ui.task_update(**kwargs)
+
+    def _report_quota(self) -> None:
+        self.ui.quota(self.limiter.used_today(), self.limiter.effective_daily_limit())
 
     # ---- mensajes: se muestran al usuario y quedan en el log ----------------
 
@@ -291,6 +323,7 @@ class Scanner:
                 f"{format_local_time(self.limiter.next_reset())} (hora local).",
                 "warn",
             )
+            self._report_quota()
             return client
         quota = client.get_user_quota()  # lanza AuthError si la clave no vale
         if quota is not None:
@@ -307,6 +340,7 @@ class Scanner:
                 f"({self.limiter.used_today()} de {limit} hoy).",
                 "warn",
             )
+        self._report_quota()
         return client
 
     # ---- Defender -----------------------------------------------------------
@@ -324,7 +358,7 @@ class Scanner:
             result = self.defender_runner(
                 target,
                 report_only=self.cfg.defender.report_only,
-                on_tick=lambda s: self.ui.task_update(detail=f"{s:.0f} s"),
+                on_tick=lambda s: self._progress(detail=f"{s:.0f} s"),
             )
             self._end()
             self.db.set_scan_defender(scan_id, result.to_dict())
@@ -349,7 +383,8 @@ class Scanner:
         walker = Walker(
             self.cfg.scan,
             options.all_files,
-            on_progress=lambda f, d: self.ui.task_update(detail=f"{f} archivos, {d} carpetas"),
+            on_progress=lambda f, d: self._progress(detail=f"{f} archivos, {d} carpetas"),
+            checkpoint=self._check_cancel,
         )
         walk = walker.walk(options.target)
         state.walk = walk
@@ -385,7 +420,8 @@ class Scanner:
             files,
             self.db,
             self.cfg.scan.hash_workers,
-            on_progress=lambda done, total: self.ui.task_update(completed=done),
+            on_progress=lambda done, total: self._progress(completed=done),
+            checkpoint=self._check_cancel,
         )
         state.groups = group_by_hash(state.hashes)
         cached = sum(1 for r in state.hashes if r.from_cache)
@@ -420,7 +456,7 @@ class Scanner:
         self.ui.task_start("Comprobando firmas digitales", len(need), unit="files")
         infos = check_signatures(
             [r.entry.path for r in need],
-            on_progress=lambda done, total: self.ui.task_update(completed=done),
+            on_progress=lambda done, total: self._progress(completed=done),
         )
         rows = []
         for r, info in zip(need, infos):
@@ -472,6 +508,7 @@ class Scanner:
         limit = self.limiter.effective_daily_limit()
         remaining = self.limiter.remaining_today()
         distinct = plural(len(state.groups), "archivo distinto", "archivos distintos")
+        self.ui.estimate(needed, remaining, needed / per_minute)
         if needed == 0:
             if state.groups:
                 self._say(f"{distinct}, todo ya en caché: no hace falta consultar nada.")
@@ -574,6 +611,7 @@ class Scanner:
         max_checks = self.cfg.virustotal.analysis_max_checks_per_run
         try:
             while True:
+                self._check_cancel()
                 now = self.clock()
                 due = [sha for sha, c in checks.items() if c.next_at <= now]
                 if due:
@@ -593,6 +631,8 @@ class Scanner:
                 try:
                     if kind == "check":
                         finished = self._do_check(client, item, checks[item])
+                        if finished:
+                            self._announce(item, state)
                         if finished or checks[item].this_run >= max_checks or not wait_checks:
                             # Si no ha terminado, se recogerá en otra ejecución
                             del checks[item]
@@ -610,6 +650,7 @@ class Scanner:
                         self._do_lookup(client, item)
                         lookups.popleft()
                         done += 1
+                        self._announce(item, state)
                     transient_in_a_row = 0
                 except DailyQuotaExceeded:
                     if options.wait:
@@ -654,8 +695,20 @@ class Scanner:
                     detail=f"peticiones: {self.limiter.requests_this_run} · quedan hoy: "
                     f"{self.limiter.remaining_today()}",
                 )
+                self._report_quota()
         finally:
             self._end()
+
+    def _announce(self, sha: str, state: _RunState) -> None:
+        """Avisa en vivo del resultado de un archivo recién consultado."""
+        results = state.groups.get(sha)
+        if not results:
+            return
+        verdict, _, _ = self._vt_verdict(sha, self.db.get_vt_record(sha), state)
+        rel_path = results[0].entry.rel_path
+        if len(results) > 1:
+            rel_path += f" (y {len(results) - 1} copia(s))"
+        self.ui.result(rel_path, verdict.level, verdict.reason)
 
     @staticmethod
     def _drop(
@@ -715,7 +768,7 @@ class Scanner:
 
         def progress(sent: int, total: int) -> None:
             pct = 100 * sent / total if total else 100
-            self.ui.task_update(detail=f"subiendo {name}: {pct:.0f} %")
+            self._progress(detail=f"subiendo {name}: {pct:.0f} %")
 
         analysis_id = client.upload_file(path, size, on_progress=progress)
         first = self.cfg.virustotal.analysis_first_check_seconds

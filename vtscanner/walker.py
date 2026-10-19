@@ -101,10 +101,13 @@ class Walker:
         cfg: ScanConfig,
         all_files: bool = False,
         on_progress: Callable[[int, int], None] | None = None,
+        checkpoint: Callable[[], None] | None = None,
     ) -> None:
+        """checkpoint se llama a menudo; si lanza una excepción, el recorrido se para."""
         self.cfg = cfg
         self.all_files = all_files
         self.on_progress = on_progress
+        self.checkpoint = checkpoint or (lambda: None)
         self.extensions = set(cfg.extensions)
         self.no_sniff = set(cfg.no_sniff_extensions)
         self.exclude_dirs = set(cfg.exclude_dirs) | ALWAYS_SKIP_DIRS
@@ -118,6 +121,7 @@ class Walker:
         result = WalkResult(root=target)
         stack = [target]
         while stack:
+            self.checkpoint()
             directory = stack.pop()
             result.dirs_seen += 1
             try:
@@ -173,14 +177,21 @@ class Walker:
             except OSError as exc:
                 return "blocked" if is_defender_block(exc) else "no"
 
-        with ThreadPoolExecutor(max_workers=SNIFF_WORKERS) as pool:
+        pool = ThreadPoolExecutor(max_workers=SNIFF_WORKERS)
+        try:
             for entry, outcome in zip(pending, pool.map(sniff, pending)):
+                self.checkpoint()
                 if outcome == "mz":
                     if entry.ext not in LEGIT_PE_EXTENSIONS:
                         entry.signals.add(SIGNAL_DISGUISED)
                     result.files.append(entry)
                 elif outcome == "blocked":
                     result.skipped.append(SkippedEntry(entry.path, entry.rel_path, entry.size, "defender_blocked"))
+        except BaseException:
+            # Si se detiene, no esperar a los que quedan en cola
+            pool.shutdown(wait=False, cancel_futures=True)
+            raise
+        pool.shutdown()
 
     def _single_file(self, path: str) -> WalkResult:
         root = os.path.dirname(path)

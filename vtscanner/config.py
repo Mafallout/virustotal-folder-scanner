@@ -2,12 +2,46 @@
 
 from __future__ import annotations
 
+import os
+import sys
 import tomllib
 from dataclasses import dataclass, field, fields
+from functools import lru_cache
 from pathlib import Path
 
-PROJECT_DIR = Path(__file__).resolve().parent.parent
+
+def _base_dir() -> Path:
+    """Carpeta del programa: la del .exe si va empaquetado, la del proyecto si no."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent.parent
+
+
+PROJECT_DIR = _base_dir()
 DEFAULT_CONFIG_PATH = PROJECT_DIR / "config.toml"
+
+
+def fallback_dir() -> Path:
+    base = os.environ.get("LOCALAPPDATA") or str(Path.home())
+    return Path(base) / "vtscan"
+
+
+def is_writable(path: Path) -> bool:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / ".vtscan_prueba_escritura"
+        probe.write_text("ok", encoding="ascii")
+        probe.unlink()
+        return True
+    except OSError:
+        return False
+
+
+@lru_cache(maxsize=1)
+def writable_base() -> Path:
+    """Dónde se guardan caché, logs e informes: junto al programa si se puede
+    escribir ahí; si no (por ejemplo, dentro de Archivos de programa), en LOCALAPPDATA."""
+    return PROJECT_DIR if is_writable(PROJECT_DIR) else fallback_dir()
 
 
 class ConfigError(Exception):
@@ -220,7 +254,7 @@ class Config:
 
     def _resolve(self, value: str) -> Path:
         path = Path(value)
-        return path if path.is_absolute() else PROJECT_DIR / path
+        return path if path.is_absolute() else writable_base() / path
 
     @property
     def data_path(self) -> Path:

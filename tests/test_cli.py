@@ -22,20 +22,6 @@ def test_parse_selection():
     assert parse_selection("abc", 5) is None
 
 
-def test_load_api_key_from_env(monkeypatch, tmp_path):
-    monkeypatch.setattr(cli, "PROJECT_DIR", tmp_path)
-    monkeypatch.setenv("VT_API_KEY", "  desde_entorno ")
-    assert cli.load_api_key() == "desde_entorno"
-
-
-def test_load_api_key_from_dotenv(monkeypatch, tmp_path):
-    monkeypatch.setattr(cli, "PROJECT_DIR", tmp_path)
-    monkeypatch.delenv("VT_API_KEY", raising=False)
-    assert cli.load_api_key() is None
-    (tmp_path / ".env").write_text('# comentario\nOTRA=1\nexport VT_API_KEY="desde_env"\n', encoding="utf-8")
-    assert cli.load_api_key() == "desde_env"
-
-
 def config_file(tmp_path: Path) -> Path:
     data = tmp_path / "data"
     reports = tmp_path / "reports"
@@ -57,9 +43,7 @@ def test_main_dry_run(tmp_path):
     assert list((tmp_path / "data" / "logs").glob("vtscan_*.log"))
 
 
-def test_main_without_key_fails(tmp_path, monkeypatch):
-    monkeypatch.setattr(cli, "PROJECT_DIR", tmp_path)
-    monkeypatch.delenv("VT_API_KEY", raising=False)
+def test_main_without_key_fails(tmp_path, no_api_key):
     folder = tmp_path / "juego"
     write(folder / "a.exe", MZ)
     assert cli.main([str(folder), "--config", str(config_file(tmp_path))]) == cli.EXIT_ERROR

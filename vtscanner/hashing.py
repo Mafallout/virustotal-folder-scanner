@@ -52,8 +52,10 @@ def hash_entries(
     db: Database,
     workers: int = 4,
     on_progress: Callable[[int, int], None] | None = None,
+    checkpoint: Callable[[], None] | None = None,
 ) -> list[HashResult]:
-    """Calcula el hash de cada archivo. on_progress(bytes_hechos, bytes_totales)."""
+    """Calcula el hash de cada archivo. on_progress(bytes_hechos, bytes_totales).
+    checkpoint se llama cada medio segundo; si lanza una excepción, se para."""
     total_bytes = sum(e.size for e in entries)
     done_bytes = 0
     results: list[HashResult] = []
@@ -89,6 +91,8 @@ def hash_entries(
         }
         not_done = set(futures)
         while not_done:
+            if checkpoint:
+                checkpoint()
             # Espera con timeout para que Ctrl+C funcione en Windows
             finished, not_done = wait(not_done, timeout=0.5, return_when=FIRST_COMPLETED)
             for future in finished:

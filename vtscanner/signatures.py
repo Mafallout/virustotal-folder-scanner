@@ -141,7 +141,8 @@ def check_signatures(
     batches = [paths[i : i + BATCH_SIZE] for i in range(0, len(paths), BATCH_SIZE)]
     results: list[list[SignatureInfo]] = [[] for _ in batches]
     done = 0
-    with ThreadPoolExecutor(max_workers=PARALLEL_BATCHES) as pool:
+    pool = ThreadPoolExecutor(max_workers=PARALLEL_BATCHES)
+    try:
         futures = {pool.submit(_run_batch, batch): n for n, batch in enumerate(batches)}
         for future in as_completed(futures):
             n = futures[future]
@@ -149,4 +150,9 @@ def check_signatures(
             done += len(batches[n])
             if on_progress:
                 on_progress(done, len(paths))
+    except BaseException:
+        # Si se detiene, los lotes en cola no llegan a empezar
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
+    pool.shutdown()
     return [info for batch in results for info in batch]
