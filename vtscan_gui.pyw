@@ -1,3 +1,5 @@
+#!.venv\Scripts\pythonw.exe
+# Con doble clic, el lanzador de Python lee la línea de arriba y usa el Python de .venv
 """vtscan con ventana. Doble clic para abrirlo (sin consola)."""
 
 import subprocess
@@ -21,8 +23,7 @@ if sys.version_info < (3, 11):
 try:
     import PySide6  # noqa: F401
 except ImportError:
-    # Con doble clic, Windows puede abrirlo con el Python del sistema: se vuelve
-    # a lanzar con el del entorno .venv del proyecto, que tiene las dependencias
+    # Si se abre con otro Python, por ejemplo desde la terminal, se vuelve a lanzar con el de .venv
     if VENV_PYTHONW.exists() and Path(sys.executable).resolve() != VENV_PYTHONW.resolve():
         subprocess.Popen([str(VENV_PYTHONW), str(Path(__file__).resolve())], cwd=str(HERE))
         sys.exit(0)
