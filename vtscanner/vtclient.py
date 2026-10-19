@@ -366,3 +366,22 @@ class VTClient:
 
 def gui_url(sha256: str) -> str:
     return GUI_FILE_URL.format(sha256)
+
+
+def check_api_key(api_key: str, timeout: float = 15) -> bool | None:
+    """True si VirusTotal acepta la clave, False si la rechaza y None si no se
+    pudo comprobar (sin conexión, por ejemplo). Consultar el propio usuario no
+    gasta cuota."""
+    try:
+        resp = requests.get(
+            f"{API_BASE}/users/{api_key}",
+            headers={"x-apikey": api_key, "User-Agent": f"vtscan/{__version__}"},
+            timeout=timeout,
+        )
+    except requests.RequestException:
+        return None
+    if resp.status_code == 200:
+        return True
+    if resp.status_code in (401, 403, 404):
+        return False
+    return None

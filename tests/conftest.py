@@ -1,7 +1,12 @@
+import os
 import sys
 from pathlib import Path
 
 import pytest
+
+# La ventana se prueba sin mostrarla en pantalla
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("QT_QPA_FONTDIR", os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts"))
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:

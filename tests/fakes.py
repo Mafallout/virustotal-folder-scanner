@@ -58,16 +58,17 @@ class RecordingUI(BaseUI):
 class FakeVT:
     """Imita VTClient. Cada llamada pasa por el limitador real."""
 
-    def __init__(self, limiter, known, analysis_rounds=2, after_call=None):
+    def __init__(self, limiter, known, analysis_rounds=2, after_call=None, on_wait=None):
         self.limiter = limiter
         self.known = known
         self.analysis_rounds = analysis_rounds
         self.after_call = after_call
+        self.on_wait = on_wait
         self.calls = []
         self.analysis_calls = {}
 
     def _hit(self, label):
-        self.limiter.wait_for_slot()
+        self.limiter.wait_for_slot(self.on_wait)
         self.limiter.record(label, 200)
         self.calls.append(label)
         if self.after_call:
@@ -110,7 +111,7 @@ class Factory:
         self.instances = []
 
     def __call__(self, api_key, limiter, cfg, on_wait=None):
-        fake = FakeVT(limiter, self.known, self.analysis_rounds, self.after_call)
+        fake = FakeVT(limiter, self.known, self.analysis_rounds, self.after_call, on_wait)
         self.instances.append(fake)
         return fake
 
