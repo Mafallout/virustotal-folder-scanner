@@ -1,6 +1,7 @@
 """Pruebas del flujo completo con un VirusTotal simulado (sin red)."""
 
 import hashlib
+import logging
 import os
 
 import pytest
@@ -74,7 +75,9 @@ class FakeVT:
         report = self.known.get(sha)
         if report is None:
             return None
-        return FileReport(sha, report.malicious, report.suspicious, report.total, dict(report.detections))
+        return FileReport(
+            sha, report.malicious, report.suspicious, report.total, dict(report.detections), report.threat_label
+        )
 
     def upload_file(self, path, size, on_progress=None):
         self._hit("upload")
@@ -160,6 +163,28 @@ def test_first_run_queries_and_second_run_uses_cache(tmp_path, cfg, db, clock):
     assert factory.calls == ["users"]  # nada que consultar: todo en caché
     assert outcome2.complete
     assert "sin releer gracias a la caché" in ui2.text()
+
+
+def test_minor_engine_detection_is_low_named_and_logged(tmp_path, cfg, db, clock, caplog):
+    folder = tmp_path / "juego"
+    dll = write(folder / "voz.dll", MZ + b"voz")
+    known = {
+        sha_of(dll): FileReport(
+            "", 1, 0, 70, {"Skyhigh": ("malicious", "BehavesLike.Win64.Downloader.tc")}, "downloader."
+        )
+    }
+    ui = RecordingUI()
+    with caplog.at_level(logging.INFO, logger="vtscanner"):
+        make_scanner(cfg, db, clock, ui, Factory(known)).run(ScanOptions(target=str(folder)))
+    (row,) = ui.summary[0]
+    assert row.level == Level.LOW
+    assert row.label == "downloader"
+    # Ninguno de los motores principales lo detecta: se enseña quién lo hace
+    assert row.main_detections == [("Skyhigh", "BehavesLike.Win64.Downloader.tc")]
+    # El log guarda las fases y el resultado
+    assert "== Calculando SHA-256" in caplog.text
+    assert "Resultado: Bajo 1" in caplog.text
+    assert "Peticiones en esta ejecución: 2" in caplog.text
 
 
 def test_quota_exhaustion_pauses_and_resume_continues(tmp_path, cfg, db, clock):

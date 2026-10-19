@@ -12,10 +12,17 @@ from vtscanner.vtclient import FileReport
 
 SHA = "b" * 64
 C = Classifier(VerdictConfig())
+RELIABLE = VerdictConfig().reliable_engines
 
 
-def report(mal, sus=0, total=70, labels=(), names=(), categories=(), label=""):
-    detections = {f"E{i}": ("malicious", text) for i, text in enumerate(labels)}
+def report(
+    mal, sus=0, total=70, labels=(), names=(), categories=(), label="", engines=None, category="malicious"
+):
+    """Por defecto, las detecciones vienen de antivirus de referencia."""
+    engines = list(engines or RELIABLE)
+    detections = {
+        (engines[i] if i < len(engines) else f"Motor{i}"): (category, text) for i, text in enumerate(labels)
+    }
     return FileReport(SHA, mal, sus, total, detections, label, list(categories), list(names))
 
 
@@ -49,7 +56,7 @@ def test_vt_classification_names_count():
 def test_many_crack_detections_are_capped_at_high():
     verdict = C.classify_report(report(15, labels=CRACK_LABELS))
     assert verdict.level == Level.HIGH
-    assert "crack" in verdict.reason
+    assert "herramientas o software no deseado" in verdict.reason
 
 
 def test_many_generic_detections_are_critical():
@@ -83,8 +90,31 @@ def test_single_dangerous_detection_is_medium():
 
 
 def test_suspicious_only():
-    assert C.classify_report(report(0, sus=2)).level == Level.MEDIUM
-    assert C.classify_report(report(0, sus=1)).level == Level.LOW
+    two = ["Suspicious.X", "Suspicious.Y"]
+    assert C.classify_report(report(0, sus=2, labels=two, category="suspicious")).level == Level.MEDIUM
+    assert C.classify_report(report(0, sus=1, labels=two[:1], category="suspicious")).level == Level.LOW
+    minor = report(0, sus=2, labels=two, category="suspicious", engines=["Skyhigh", "Zillya"])
+    assert C.classify_report(minor).level == Level.LOW
+
+
+def test_detection_only_from_minor_engines_is_low():
+    verdict = C.classify_report(report(1, labels=["Trojan.Swrort.Win32.1"], engines=["Zillya"]))
+    assert verdict.level == Level.LOW
+    assert "antivirus de referencia" in verdict.reason
+
+
+def test_minor_engines_do_not_lower_higher_counts():
+    labels = ["Trojan.Swrort.a", "Win32.Swrort.b", "Swrort.c"]
+    assert C.classify_report(report(3, labels=labels, engines=["Zillya", "Bkav", "Jiangmin"])).level == Level.HIGH
+
+
+def test_behaveslike_is_generic_and_label_is_cleaned():
+    verdict = C.classify_report(
+        report(1, labels=["BehavesLike.Win64.Downloader.tc"], engines=["Kaspersky"], label="downloader.")
+    )
+    assert verdict.level == Level.LOW
+    assert verdict.label == "downloader"
+    assert "con etiquetas genéricas (probable falso positivo)" in verdict.reason
 
 
 def test_label_prefers_vt_then_family():

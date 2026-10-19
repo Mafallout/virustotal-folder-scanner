@@ -104,6 +104,15 @@ DEFAULT_GENERIC_KEYWORDS = [
     "attribute", "score", "variant", "zusy", "razy", "tedy", "kryptik",
     "wacatac", "sabsik", "artemis", "malware", "dynamer", "deepscan",
     "reputation", "agent", "cloud", "lazy", "packed", "obfuscated",
+    "behaveslike",
+]
+
+# Antivirus de referencia: si 1 o 2 detecciones no vienen de ninguno de ellos,
+# casi siempre es un falso positivo de un motor menor.
+DEFAULT_RELIABLE_ENGINES = [
+    "Microsoft", "Kaspersky", "ESET-NOD32", "BitDefender", "Avast", "AVG",
+    "Sophos", "Malwarebytes", "DrWeb", "Fortinet", "TrendMicro", "Symantec",
+    "Avira", "GData", "Emsisoft",
 ]
 
 DEFAULT_MAIN_ENGINES = [
@@ -168,6 +177,9 @@ class VerdictConfig:
     crack_keywords: list[str] = field(default_factory=lambda: list(DEFAULT_CRACK_KEYWORDS))
     generic_keywords: list[str] = field(
         default_factory=lambda: list(DEFAULT_GENERIC_KEYWORDS)
+    )
+    reliable_engines: list[str] = field(
+        default_factory=lambda: list(DEFAULT_RELIABLE_ENGINES)
     )
 
 

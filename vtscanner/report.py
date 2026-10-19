@@ -491,7 +491,7 @@ def write_html(rows: list[ReportRow], summary: ReportSummary, path: Path) -> Non
 <th data-key="order" data-num="1">Nivel</th>
 <th data-key="path">Archivo y motivo</th>
 <th data-key="mal" data-num="1">Maliciosos / sospechosos</th>
-<th class="nosort">Etiqueta y motores principales</th>
+<th class="nosort">Etiqueta y detecciones</th>
 <th class="nosort">Firma</th>
 <th data-key="size" data-num="1">Tamaño</th>
 <th class="nosort">SHA-256</th>

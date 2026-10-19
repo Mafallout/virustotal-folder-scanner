@@ -100,16 +100,22 @@ class KeywordSet:
         return None
 
 
+def clean_label(text: str) -> str:
+    """VirusTotal a veces deja la etiqueta a medias ("downloader.")."""
+    return text.strip().strip("./ ")
+
+
 class Classifier:
     def __init__(self, cfg: VerdictConfig) -> None:
         self.cfg = cfg
         self.dangerous = KeywordSet(cfg.dangerous_keywords)
         self.crack = KeywordSet(cfg.crack_keywords)
         self.generic = KeywordSet(cfg.generic_keywords)
+        self.reliable = {e.lower() for e in cfg.reliable_engines}
 
     def _label(self, report: FileReport, family: str | None) -> str:
-        if report.threat_label:
-            return report.threat_label
+        if clean_label(report.threat_label):
+            return clean_label(report.threat_label)
         if family:
             return family
         for engine in PREFERRED_LABEL_ENGINES:
@@ -124,7 +130,7 @@ class Classifier:
     def classify_report(self, report: FileReport) -> Verdict:
         mal, sus, total = report.malicious, report.suspicious, report.total
         if mal == 0 and sus == 0:
-            return Verdict(Level.CLEAN, f"VT: 0 de {total} motores lo detectan", report.threat_label)
+            return Verdict(Level.CLEAN, f"VT: 0 de {total} motores lo detectan", clean_label(report.threat_label))
 
         families: Counter[str] = Counter()
         dangerous_engines = crack = generic = 0
@@ -151,8 +157,19 @@ class Classifier:
         labeled = len(report.detections)
         all_crack = labeled > 0 and crack == labeled
         all_soft = labeled > 0 and crack + generic == labeled
+        # ¿Lo detecta alguno de los antivirus de referencia? Si no, con 1 o 2
+        # detecciones casi siempre es un falso positivo de un motor menor
+        reliable_hit = any(name.lower() in self.reliable for name in report.detections)
         label = self._label(report, family)
         detected = f"{mal} de {total} motores lo detectan"
+        not_reliable = "ninguno de los antivirus de referencia (probable falso positivo)"
+        tools = "etiquetas de herramientas o software no deseado (HackTool, PUA...)"
+        if generic == labeled:
+            soft = "etiquetas genéricas"
+        elif crack == labeled:
+            soft = tools
+        else:
+            soft = "etiquetas genéricas o de herramientas"
 
         if family_count >= 2:
             return Verdict(
@@ -160,29 +177,23 @@ class Classifier:
             )
         if mal >= self.cfg.critical_threshold:
             if all_crack:
-                return Verdict(
-                    Level.HIGH, f"VT: {detected}, pero todas las etiquetas son de crack/HackTool/PUA", label
-                )
+                return Verdict(Level.HIGH, f"VT: {detected}, pero todas son {tools}", label)
             return Verdict(Level.CRITICAL, f"VT: {detected}", label)
         if mal >= self.cfg.high_threshold:
             if all_crack:
-                return Verdict(
-                    Level.MEDIUM, f"VT: {detected}, solo con etiquetas de crack/HackTool/PUA", label
-                )
+                return Verdict(Level.MEDIUM, f"VT: {detected}, solo con {tools}", label)
             return Verdict(Level.HIGH, f"VT: {detected}", label)
         if mal >= 1:
             if family_count == 1:
                 return Verdict(Level.MEDIUM, f"VT: {detected}; uno apunta a malware grave ({family})", label)
             if all_soft:
-                return Verdict(
-                    Level.LOW,
-                    f"VT: {detected} con etiquetas genéricas o de crack (probable falso positivo)",
-                    label,
-                )
+                return Verdict(Level.LOW, f"VT: {detected} con {soft} (probable falso positivo)", label)
+            if not reliable_hit:
+                return Verdict(Level.LOW, f"VT: {detected}, {not_reliable}", label)
             return Verdict(Level.MEDIUM, f"VT: {detected}", label)
-        if sus >= 2:
+        if sus >= 2 and reliable_hit:
             return Verdict(Level.MEDIUM, f"VT: {sus} motores lo marcan como sospechoso", label)
-        return Verdict(Level.LOW, "VT: 1 motor lo marca como sospechoso", label)
+        return Verdict(Level.LOW, f"VT: {sus} motor(es) lo marcan como sospechoso", label)
 
 
 def classify_defender(name: str) -> Verdict:

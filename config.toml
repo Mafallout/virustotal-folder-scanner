@@ -92,6 +92,14 @@ generic_keywords = [
     "attribute", "score", "variant", "zusy", "razy", "tedy", "kryptik",
     "wacatac", "sabsik", "artemis", "malware", "dynamer", "deepscan",
     "reputation", "agent", "cloud", "lazy", "packed", "obfuscated",
+    "behaveslike",
+]
+# Antivirus de referencia. Si 1 o 2 detecciones no vienen de ninguno de ellos,
+# el archivo sale como Bajo (casi siempre es un falso positivo de un motor menor).
+reliable_engines = [
+    "Microsoft", "Kaspersky", "ESET-NOD32", "BitDefender", "Avast", "AVG",
+    "Sophos", "Malwarebytes", "DrWeb", "Fortinet", "TrendMicro", "Symantec",
+    "Avira", "GData", "Emsisoft",
 ]
 
 [report]
@@ -101,7 +109,8 @@ output_dir = "reports"
 open_html = true
 # Separador del CSV. ";" es el que espera Excel en español.
 csv_delimiter = ";"
-# Motores cuyas detecciones salen con nombre en el informe.
+# Motores cuyas detecciones salen con nombre en el informe. Si ninguno de ellos
+# detecta el archivo, se muestran los que sí lo detectan.
 main_engines = [
     "Microsoft", "Kaspersky", "ESET-NOD32", "BitDefender", "Avast", "Sophos",
     "Malwarebytes", "DrWeb", "Fortinet", "TrendMicro",

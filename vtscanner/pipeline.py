@@ -7,7 +7,7 @@ import logging
 import math
 import os
 import time
-from collections import deque
+from collections import Counter, deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -58,6 +58,7 @@ STATUS_SUMMARY = {
     "error": "sin comprobar",
 }
 CHECK_DELAYS = (120, 240, 480, 900)  # esperas entre comprobaciones de un análisis
+LOG_LEVELS = {"warn": logging.WARNING, "error": logging.ERROR}
 
 
 @dataclass
@@ -186,6 +187,21 @@ class Scanner:
             self.db, cfg.virustotal.requests_per_minute, cfg.virustotal.daily_limit, clock, sleeper
         )
 
+    # ---- mensajes: se muestran al usuario y quedan en el log ----------------
+
+    def _say(self, text: str, kind: str = "info") -> None:
+        log.log(LOG_LEVELS.get(kind, logging.INFO), text)
+        self.ui.message(text, kind)
+
+    def _phase(self, title: str) -> None:
+        log.info("== %s", title)
+        self.ui.phase(title)
+
+    def _end(self, summary: str | None = None) -> None:
+        if summary:
+            log.info(summary)
+        self.ui.task_end(summary)
+
     # ======================================================================
     # Escaneo
     # ======================================================================
@@ -212,10 +228,11 @@ class Scanner:
                 network_done = self._network_phase(client, lookups, options, scan_id, state)
         except KeyboardInterrupt:
             interrupted = True
-            self.ui.task_end()
-            self.ui.message("Interrumpido. Se guarda lo hecho y se genera un informe parcial.", "warn")
+            self._end()
+            self._say("Interrumpido. Se guarda lo hecho y se genera un informe parcial.", "warn")
         except Exception:
-            self.ui.task_end()
+            self._end()
+            log.exception("Error inesperado durante el escaneo")
             self.db.set_scan_status(scan_id, "interrupted")
             raise
         rows = self._build_rows(scan_id, state)
@@ -233,6 +250,16 @@ class Scanner:
         else:
             status = "paused"
         self.db.set_scan_status(scan_id, status)
+        counts = Counter(r.level.label for r in rows)
+        log.info("Resultado: %s", ", ".join(f"{name} {n}" for name, n in counts.most_common()) or "sin archivos")
+        log.info(
+            "Peticiones en esta ejecución: %s; usadas hoy: %s de %s; estado: %s",
+            self.limiter.requests_this_run,
+            self.limiter.used_today(),
+            self.limiter.effective_daily_limit(),
+            status,
+        )
+        log.info("Informes: %s | %s", html_path, csv_path)
         self.ui.show_summary(rows, summary, [html_path, csv_path])
         return ScanOutcome(scan_id, complete, findings, interrupted, html_path, csv_path)
 
@@ -247,7 +274,7 @@ class Scanner:
         if scan is not None and scan.root_key == root_key:
             self.db.set_scan_options(scan.id, options.stored())
             self.db.set_scan_status(scan.id, "running")
-            self.ui.message("Se continúa el escaneo anterior de esta carpeta (no se repite lo ya hecho).")
+            self._say("Se continúa el escaneo anterior de esta carpeta (no se repite lo ya hecho).")
             return scan.id, scan.defender
         return self.db.create_scan(target, root_key, options.stored()), None
 
@@ -259,7 +286,7 @@ class Scanner:
         )
         limit = self.limiter.effective_daily_limit()
         if self.limiter.remaining_today() <= 0:
-            self.ui.message(
+            self._say(
                 f"La cuota diaria ya está agotada; se reinicia a las "
                 f"{format_local_time(self.limiter.next_reset())} (hora local).",
                 "warn",
@@ -270,12 +297,12 @@ class Scanner:
             used, allowed = quota
             self.limiter.sync_with_server(used, allowed)
             limit = self.limiter.effective_daily_limit()
-            self.ui.message(
+            self._say(
                 f"Clave de VirusTotal válida. Cuota de hoy: {self.limiter.used_today()} de {limit} usadas.",
                 "ok",
             )
         else:
-            self.ui.message(
+            self._say(
                 f"No se pudo leer la cuota en VirusTotal; se usa el contador local "
                 f"({self.limiter.used_today()} de {limit} hoy).",
                 "warn",
@@ -287,10 +314,10 @@ class Scanner:
     def _defender_phase(
         self, scan_id: int, target: str, stored: dict[str, Any] | None, state: _RunState
     ) -> None:
-        self.ui.phase("Microsoft Defender")
+        self._phase("Microsoft Defender")
         if stored is not None:
             state.defender = DefenderResult.from_dict(stored)
-            self.ui.message("Se reutiliza el análisis de Defender de la ejecución anterior.")
+            self._say("Se reutiliza el análisis de Defender de la ejecución anterior.")
         else:
             mode = "solo informe" if self.cfg.defender.report_only else "con acciones de Defender"
             self.ui.task_start(f"Analizando con Defender ({mode})", None)
@@ -299,25 +326,25 @@ class Scanner:
                 report_only=self.cfg.defender.report_only,
                 on_tick=lambda s: self.ui.task_update(detail=f"{s:.0f} s"),
             )
-            self.ui.task_end()
+            self._end()
             self.db.set_scan_defender(scan_id, result.to_dict())
             state.defender = result
         result = state.defender
         if not result.ok:
-            self.ui.message(f"Defender no pudo analizar la carpeta: {result.error}", "warn")
+            self._say(f"Defender no pudo analizar la carpeta: {result.error}", "warn")
             state.notes.append(f"Defender no pudo analizar la carpeta: {result.error}")
         elif not result.threats:
-            self.ui.message(f"Defender: sin amenazas ({result.duration:.0f} s).", "ok")
+            self._say(f"Defender: sin amenazas ({result.duration:.0f} s).", "ok")
         else:
-            self.ui.message(f"Defender encontró {len(result.threats)} amenaza(s):", "warn")
+            self._say(f"Defender encontró {len(result.threats)} amenaza(s):", "warn")
             for threat in result.threats:
                 where = ", ".join(threat.resources) or "(sin ruta)"
-                self.ui.message(f"  {threat.name}: {where}", "warn")
+                self._say(f"  {threat.name}: {where}", "warn")
 
     # ---- recorrido y hashes -------------------------------------------------
 
     def _walk_phase(self, options: ScanOptions, state: _RunState) -> None:
-        self.ui.phase("Buscando archivos")
+        self._phase("Buscando archivos")
         self.ui.task_start("Recorriendo la carpeta", None)
         walker = Walker(
             self.cfg.scan,
@@ -327,13 +354,13 @@ class Scanner:
         walk = walker.walk(options.target)
         state.walk = walk
         kind = "todos los archivos" if options.all_files else "ejecutables y scripts"
-        self.ui.task_end(
+        self._end(
             f"{plural(walk.files_seen, 'archivo')} ({human_size(walk.bytes_seen)}) en "
             f"{plural(walk.dirs_seen, 'carpeta')}; {len(walk.files)} para analizar ({kind})."
         )
         disguised = sum(1 for e in walk.files if SIGNAL_DISGUISED in e.signals)
         if disguised:
-            self.ui.message(f"{disguised} ejecutable(s) con una extensión que no es la suya.", "warn")
+            self._say(f"{disguised} ejecutable(s) con una extensión que no es la suya.", "warn")
         reasons = {
             "too_large": f"de más de {self.cfg.scan.max_file_size_mb} MB se omiten (VirusTotal no los admite)",
             "cloud": "están en la nube sin descargar y se omiten",
@@ -343,16 +370,16 @@ class Scanner:
             count = sum(1 for s in walk.skipped if s.reason == reason)
             if count:
                 note = f"{count} archivo(s) o carpeta(s) {text}."
-                self.ui.message(note, "warn")
+                self._say(note, "warn")
                 state.notes.append(note)
 
     def _hash_phase(self, scan_id: int, state: _RunState) -> None:
         assert state.walk is not None
         files = state.walk.files
         if not files:
-            self.ui.message("No hay archivos que analizar.", "warn")
+            self._say("No hay archivos que analizar.", "warn")
             return
-        self.ui.phase("Calculando SHA-256")
+        self._phase("Calculando SHA-256")
         self.ui.task_start("Calculando hashes", sum(e.size for e in files), unit="bytes")
         state.hashes = hash_entries(
             files,
@@ -363,7 +390,7 @@ class Scanner:
         state.groups = group_by_hash(state.hashes)
         cached = sum(1 for r in state.hashes if r.from_cache)
         hashed = sum(1 for r in state.hashes if r.sha256)
-        self.ui.task_end(
+        self._end(
             f"{plural(hashed, 'archivo')}, {plural(len(state.groups), 'distinto')}"
             + (f" ({cached} sin releer gracias a la caché)" if cached else "")
             + "."
@@ -375,10 +402,10 @@ class Scanner:
             if s.reason == "defender_blocked":
                 self.db.add_event(scan_id, s.path, "defender_blocked")
         if blocked:
-            self.ui.message(f"Defender bloqueó la lectura de {len(blocked)} archivo(s).", "warn")
+            self._say(f"Defender bloqueó la lectura de {len(blocked)} archivo(s).", "warn")
         failed = [r for r in state.hashes if r.error and not r.defender_blocked]
         if failed:
-            self.ui.message(f"{len(failed)} archivo(s) no se pudieron leer.", "warn")
+            self._say(f"{len(failed)} archivo(s) no se pudieron leer.", "warn")
 
     def _signature_phase(self, state: _RunState) -> None:
         if not self.cfg.signatures.enabled or not IS_WINDOWS:
@@ -405,7 +432,7 @@ class Scanner:
         for info in infos:
             counts[info.status] = counts.get(info.status, 0) + 1
         parts = [f"{STATUS_SUMMARY[s]}: {n}" for s, n in sorted(counts.items(), key=lambda x: -x[1])]
-        self.ui.task_end("Firmas digitales. " + ", ".join(parts) + ".")
+        self._end("Firmas digitales. " + ", ".join(parts) + ".")
 
     # ---- planificación ------------------------------------------------------
 
@@ -447,23 +474,23 @@ class Scanner:
         distinct = plural(len(state.groups), "archivo distinto", "archivos distintos")
         if needed == 0:
             if state.groups:
-                self.ui.message(f"{distinct}, todo ya en caché: no hace falta consultar nada.")
+                self._say(f"{distinct}, todo ya en caché: no hace falta consultar nada.")
             return
-        self.ui.message(
+        self._say(
             f"{distinct}: {cached} ya en caché, {needed} por consultar "
             f"(unos {format_minutes(needed / per_minute)} a {per_minute} por minuto)."
         )
         days = math.ceil(max(0, needed - remaining) / limit)
-        self.ui.message(f"Cuota de hoy: quedan {remaining} de {limit}.")
+        self._say(f"Cuota de hoy: quedan {remaining} de {limit}.")
         if needed > remaining:
-            self.ui.message(
+            self._say(
                 f"No cabe todo hoy: harán falta unos {days} día(s) más. La cuota se reinicia a las "
                 f"{format_local_time(self.limiter.next_reset())} (hora local); continúa con --resume "
                 "o usa --wait para que siga solo.",
                 "warn",
             )
         if dry_run:
-            self.ui.message("Modo --dry-run: no se ha hecho ninguna consulta.", "ok")
+            self._say("Modo --dry-run: no se ha hecho ninguna consulta.", "ok")
 
     # ======================================================================
     # VirusTotal
@@ -504,7 +531,7 @@ class Scanner:
 
         queue = deque(lookups)
         if queue or checks:
-            self.ui.phase("VirusTotal")
+            self._phase("VirusTotal")
             ok = self._process(client, queue, checks, deque(), options, state, wait_checks=False)
             if not ok:
                 return False
@@ -513,7 +540,7 @@ class Scanner:
             uploads = self._choose_uploads(scan_id, state)
             checks = self._pending_checks(state, immediate=False)
             if uploads or checks:
-                self.ui.phase("Subidas a VirusTotal")
+                self._phase("Subidas a VirusTotal")
                 ok = self._process(client, deque(), checks, uploads, options, state, wait_checks=True)
                 if not ok:
                     return False
@@ -589,8 +616,8 @@ class Scanner:
                         self._wait_for_reset()
                         continue
                     reset = format_local_time(self.limiter.next_reset())
-                    self.ui.task_end()
-                    self.ui.message(
+                    self._end()
+                    self._say(
                         f"Cuota diaria agotada. Se ha guardado el progreso; continúa después de las "
                         f"{reset} (hora local) con: python vtscan.py --resume",
                         "warn",
@@ -606,8 +633,8 @@ class Scanner:
                     done += 1
                     log.warning("Error temporal con %s: %s", item, exc)
                     if transient_in_a_row >= 3:
-                        self.ui.task_end()
-                        self.ui.message(
+                        self._end()
+                        self._say(
                             f"No hay conexión estable con VirusTotal ({exc}). Lo pendiente se "
                             "reintentará en la próxima ejecución.",
                             "warn",
@@ -628,7 +655,7 @@ class Scanner:
                     f"{self.limiter.remaining_today()}",
                 )
         finally:
-            self.ui.task_end()
+            self._end()
 
     @staticmethod
     def _drop(
@@ -681,7 +708,7 @@ class Scanner:
             st = None
         if st is None or st.st_size != size:
             self.db.remove_from_queue(sha)
-            self.ui.message(f"No se sube {os.path.basename(path)}: el archivo ya no está o ha cambiado.", "warn")
+            self._say(f"No se sube {os.path.basename(path)}: el archivo ya no está o ha cambiado.", "warn")
             return None
         name = os.path.basename(path)
         self.ui.task_update(detail=f"subiendo {name} ({human_size(size)})")
@@ -745,15 +772,15 @@ class Scanner:
             self.db.queue_uploads(rows, scan_id)
             queued.extend(rows)
             if chosen:
-                self.ui.message(f"{len(chosen)} archivo(s) en cola para subir.", "ok")
+                self._say(f"{len(chosen)} archivo(s) en cola para subir.", "ok")
             else:
-                self.ui.message("No se sube nada.")
+                self._say("No se sube nada.")
         return deque(queued)
 
     def _wait_for_reset(self) -> None:
         target = self.limiter.next_reset() + 60
         self.ui.task_update(detail="")
-        self.ui.message(
+        self._say(
             f"Cuota diaria agotada. Con --wait se continúa solo a las {format_local_time(target)} (hora local).",
             "warn",
         )
@@ -768,9 +795,15 @@ class Scanner:
     # ======================================================================
 
     def _main_detections(self, report: FileReport) -> list[tuple[str, str]]:
+        """Detecciones de los motores principales. Si ninguno lo detecta, las de
+        quien sí lo detecte (hasta 3), para que se vea quién lo marca."""
         wanted = [e.lower() for e in self.cfg.report.main_engines]
         found = {name.lower(): (name, result) for name, (_, result) in report.detections.items()}
-        return [found[w] for w in wanted if w in found]
+        main = [found[w] for w in wanted if w in found]
+        if main or not report.detections:
+            return main
+        others = sorted(report.detections.items(), key=lambda kv: (kv[1][0] != "malicious", kv[0].lower()))
+        return [(name, result) for name, (_, result) in others[:3]]
 
     def _vt_verdict(self, sha: str, record: VtRecord | None, state: _RunState) -> tuple[Verdict, FileReport | None, str]:
         if sha in state.trusted_skip:
