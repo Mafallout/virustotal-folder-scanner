@@ -25,10 +25,32 @@ New-Item -ItemType Directory "build" | Out-Null
 & $python -c "import sys; from pathlib import Path; from PySide6.QtGui import QGuiApplication; app = QGuiApplication(sys.argv); from vtscanner.gui.theme import save_ico; sys.exit(0 if save_ico(Path('build/vtscan.ico')) else 1)"
 if ($LASTEXITCODE -ne 0) { throw "No se pudo crear el icono" }
 
+# Nombre, versión y autor en las propiedades del .exe: sin ellos los antivirus lo ven más sospechoso
+$numbers = (($version.Split(".") + @("0", "0", "0"))[0..3]) -join ", "
+$versionInfo = @"
+VSVersionInfo(
+  ffi=FixedFileInfo(filevers=($numbers), prodvers=($numbers)),
+  kids=[
+    StringFileInfo([StringTable('0C0A04B0', [
+      StringStruct('CompanyName', 'Mafallout'),
+      StringStruct('FileDescription', 'vtscan, revisa carpetas con VirusTotal'),
+      StringStruct('FileVersion', '$version'),
+      StringStruct('InternalName', 'vtscan'),
+      StringStruct('LegalCopyright', 'Mafallout'),
+      StringStruct('OriginalFilename', 'vtscan.exe'),
+      StringStruct('ProductName', 'vtscan'),
+      StringStruct('ProductVersion', '$version')])]),
+    VarFileInfo([VarStruct('Translation', [0x0C0A, 1200])])
+  ]
+)
+"@
+[IO.File]::WriteAllText((Join-Path $PSScriptRoot "build\version.txt"), $versionInfo)
+
 # Carpeta con el .exe (onedir): arranca rápido y da menos falsos positivos en antivirus.
 # Rutas absolutas: con --specpath, PyInstaller resuelve las relativas desde build\
 & $python -m PyInstaller --noconfirm --clean --windowed --onedir `
     --name vtscan --icon (Join-Path $PSScriptRoot "build\vtscan.ico") `
+    --version-file (Join-Path $PSScriptRoot "build\version.txt") `
     --distpath dist --workpath "build\pyinstaller" --specpath build `
     --exclude-module tkinter --exclude-module pytest --exclude-module pytestqt `
     (Join-Path $PSScriptRoot "vtscan_gui.pyw")
