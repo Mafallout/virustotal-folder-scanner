@@ -172,6 +172,10 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         ui.message("Cancelado.", "warn")
         return EXIT_INCOMPLETE
+    except Exception as exc:  # noqa: BLE001 - sin esto saldría con 1, que significa "hay hallazgos"
+        log.exception("Error inesperado")
+        ui.message(f"Error inesperado ({type(exc).__name__}: {exc}). Los detalles están en el log.", "error")
+        return EXIT_ERROR
     finally:
         lock.release()
 

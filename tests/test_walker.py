@@ -6,6 +6,7 @@ import pytest
 
 from conftest import MZ, write
 from vtscanner.config import ScanConfig
+from vtscanner.hashing import sha256_of_file
 from vtscanner.walker import (
     SIGNAL_DISGUISED,
     SIGNAL_DOUBLE_EXT,
@@ -37,6 +38,20 @@ def test_default_mode_extensions_and_disguised(tmp_path):
     assert SIGNAL_DISGUISED in by_rel["sinextension"].signals
     assert SIGNAL_DISGUISED not in by_rel["game.exe"].signals
     assert result.files_seen == 8
+
+
+def test_documents_with_mz_and_names_ending_in_dot(tmp_path):
+    write(tmp_path / "leeme.txt", MZ + b"x")
+    write(tmp_path / "foto.png", MZ + b"x")  # las imágenes no se abren: en un juego hay miles
+    odd = "\\\\?\\" + str(tmp_path / "raro.exe.")  # sin el prefijo, Windows recorta el punto final
+    with open(odd, "wb") as f:
+        f.write(MZ + b"x")
+    try:
+        files = Walker(ScanConfig()).walk(str(tmp_path)).files
+        assert {os.path.basename(e.path) for e in files} == {"leeme.txt", "raro.exe."}
+        assert all(sha256_of_file(e.path)[1] for e in files)  # y se pueden leer para el hash
+    finally:
+        os.remove(odd)
 
 
 def test_content_detection_can_be_disabled(tmp_path):

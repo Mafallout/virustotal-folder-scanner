@@ -101,6 +101,20 @@ def test_two_429_in_a_row_mean_daily_quota(db, clock):
     assert lim.remaining_today() == 0
 
 
+@responses.activate
+def test_odd_responses_are_errors_not_crashes(db, clock):
+    responses.get(f"{API_BASE}/files/{SHA}", status=403, json={"error": "Forbidden"})
+    responses.get(f"{API_BASE}/files/{'b' * 64}", json={"data": "x"})
+    responses.get(f"{API_BASE}/files/{'c' * 64}", body=requests.exceptions.TooManyRedirects("bucle"))
+    client, _ = make_client(db, clock)
+    with pytest.raises(VTError, match="403"):
+        client.get_file(SHA)
+    with pytest.raises(VTError):
+        client.get_file("b" * 64)
+    with pytest.raises(TransientError):
+        client.get_file("c" * 64)
+
+
 @responses.activate(registry=OrderedRegistry)
 def test_server_errors_are_retried_then_transient(db, clock):
     url = f"{API_BASE}/files/{SHA}"

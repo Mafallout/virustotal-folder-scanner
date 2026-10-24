@@ -28,8 +28,12 @@ ERROR_VIRUS_DELETED = 226
 
 def fs_path(path: str) -> str:
     """Añade el prefijo \\\\?\\ a rutas largas para que funcionen aunque Windows
-    no tenga activadas las rutas largas."""
-    if not IS_WINDOWS or len(path) < 240 or path.startswith("\\\\?\\"):
+    no tenga activadas las rutas largas, y a nombres que acaban en punto o espacio,
+    que sin el prefijo Windows recorta y luego no encuentra."""
+    if not IS_WINDOWS or path.startswith("\\\\?\\"):
+        return path
+    odd_name = any(p.endswith((".", " ")) and p not in (".", "..") for p in path.split("\\"))
+    if len(path) < 240 and not (odd_name and os.path.isabs(path)):
         return path
     if path.startswith("\\\\"):
         return "\\\\?\\UNC\\" + path[2:]

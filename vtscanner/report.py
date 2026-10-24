@@ -455,7 +455,8 @@ def write_html(rows: list[ReportRow], summary: ReportSummary, path: Path) -> Non
         when = f" La cuota se reinicia a las {summary.reset_local} (hora local)." if summary.reset_local else ""
         status = (
             f'<div class="status partial">Escaneo incompleto: quedan {summary.pending} '
-            f"archivo(s) pendientes. Continúa con <span class='mono'>python vtscan.py --resume</span>.{when}</div>"
+            f"archivo(s) pendientes. Continúa con el botón Continuar de la ventana o con "
+            f"<span class='mono'>python vtscan.py --resume</span>.{when}</div>"
         )
     quota = ""
     if summary.used_today is not None and summary.daily_limit:

@@ -208,10 +208,12 @@ class VTClient:
     def _error_message(self, resp: requests.Response) -> str:
         code = message = None
         try:
-            error = (resp.json() or {}).get("error") or {}
-            code, message = error.get("code"), error.get("message")
+            data = resp.json()
         except ValueError:
-            pass
+            data = None
+        error = data.get("error") if isinstance(data, dict) else None
+        if isinstance(error, dict):
+            code, message = error.get("code"), error.get("message")
         text = f"HTTP {resp.status_code}"
         if code:
             text += f" {code}"
@@ -225,15 +227,16 @@ class VTClient:
         send: Callable[[], requests.Response],
         retries: int = len(BACKOFF_SECONDS),
         quota_retry: bool = True,
+        daily: bool = True,
     ) -> requests.Response:
         """Hace una petición respetando los límites y reintentando lo que tenga sentido."""
         transient_attempts = 0
         quota_hits = 0
         while True:
-            self.limiter.wait_for_slot(self.on_wait)
+            self.limiter.wait_for_slot(self.on_wait, daily)
             try:
                 resp = send()
-            except (requests.ConnectionError, requests.Timeout, requests.exceptions.ChunkedEncodingError) as exc:
+            except requests.RequestException as exc:
                 self.limiter.record(label, None)
                 log.debug("Error de red en %s: %s", label, self.redact(str(exc)))
                 transient_attempts += 1
@@ -276,14 +279,16 @@ class VTClient:
         """(usadas hoy, permitidas hoy) según VirusTotal, o None si no se sabe.
         Sirve también para comprobar que la clave es válida (lanza AuthError)."""
         try:
-            resp = self._request("users", self._get(f"/users/{self._key}"), retries=1, quota_retry=False)
+            resp = self._request(
+                "users", self._get(f"/users/{self._key}"), retries=1, quota_retry=False, daily=False
+            )
         except TransientError:
             return None
         if resp.status_code != 200:
             return None
         try:
             quotas = ((resp.json().get("data") or {}).get("attributes") or {}).get("quotas") or {}
-        except ValueError:
+        except (ValueError, AttributeError):
             return None
         daily = quotas.get("api_requests_daily") or {}
         if isinstance(daily.get("user"), dict):
@@ -302,7 +307,7 @@ class VTClient:
             raise VTError(self._error_message(resp))
         try:
             return parse_file_object(resp.json()["data"])
-        except (ValueError, KeyError, TypeError):
+        except (ValueError, KeyError, TypeError, AttributeError):
             raise VTError("Respuesta inesperada de VirusTotal") from None
 
     def upload_file(
@@ -319,7 +324,7 @@ class VTClient:
                 raise VTError(self._error_message(resp))
             try:
                 url = str(resp.json()["data"])
-            except (ValueError, KeyError, TypeError):
+            except (ValueError, KeyError, TypeError, AttributeError):
                 raise VTError("Respuesta inesperada al pedir la URL de subida") from None
             if url.startswith("http://www.virustotal.com/"):
                 url = "https://" + url[len("http://") :]
@@ -349,7 +354,7 @@ class VTClient:
             raise VTError(self._error_message(resp))
         try:
             return str(resp.json()["data"]["id"])
-        except (ValueError, KeyError, TypeError):
+        except (ValueError, KeyError, TypeError, AttributeError):
             raise VTError("Respuesta inesperada tras la subida") from None
 
     def get_analysis(self, analysis_id: str, sha256: str) -> AnalysisStatus:
@@ -360,7 +365,7 @@ class VTClient:
             raise VTError(self._error_message(resp))
         try:
             return parse_analysis_object(sha256, resp.json()["data"])
-        except (ValueError, KeyError, TypeError):
+        except (ValueError, KeyError, TypeError, AttributeError):
             raise VTError("Respuesta inesperada al consultar el análisis") from None
 
 

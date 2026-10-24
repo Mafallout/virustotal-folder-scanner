@@ -129,6 +129,8 @@ class Classifier:
 
     def classify_report(self, report: FileReport) -> Verdict:
         mal, sus, total = report.malicious, report.suspicious, report.total
+        if total == 0:
+            return Verdict(Level.UNKNOWN, "VirusTotal lo tiene, pero aún no lo ha analizado ningún antivirus")
         if mal == 0 and sus == 0:
             return Verdict(Level.CLEAN, f"VT: 0 de {total} motores lo detectan", clean_label(report.threat_label))
 

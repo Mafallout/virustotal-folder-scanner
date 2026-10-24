@@ -829,6 +829,7 @@ class MainWindow(QMainWindow):
         self.settings = settings or QSettings(str(cfg.data_path / "ventana.ini"), QSettings.Format.IniFormat)
         self.worker: ScanWorker | None = None
         self.options: ScanOptions | None = None
+        self.last_scan_id: int | None = None
         self.summary_data: tuple[list[ReportRow], ReportSummary, list[Path]] | None = None
         self.estimate_data: tuple[int, int, float] | None = None
         self.resume_scan: Any = None
@@ -948,7 +949,7 @@ class MainWindow(QMainWindow):
                 all_files=self.options.all_files,
                 wait=self.start_page.wait.isChecked(),
             )
-            self.start_scan(options)
+            self.start_scan(options, resume_id=self.last_scan_id)
 
     def _change_key(self, problem: str = "") -> bool:
         dialog = ApiKeyDialog(self, problem)
@@ -1022,9 +1023,13 @@ class MainWindow(QMainWindow):
 
     def _on_finished(self, outcome: ScanOutcome) -> None:
         self.progress_page.finish()
+        self.last_scan_id = outcome.scan_id
         options = self.options
         if options is not None and options.dry_run:
-            self._show_estimate()
+            if outcome.interrupted:
+                self.start_page.show_estimate("Cálculo detenido.")
+            else:
+                self._show_estimate()
             self.show_start()
             return
         if self.summary_data is not None:

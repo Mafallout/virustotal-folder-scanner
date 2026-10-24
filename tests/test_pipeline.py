@@ -6,14 +6,14 @@ import os
 import pytest
 
 from conftest import MZ, write
-from fakes import Factory, RecordingUI, make_game, make_scanner, sha_of
+from fakes import Factory, FakeVT, RecordingUI, make_game, make_scanner, sha_of
 from vtscanner import hashing, pipeline
 from vtscanner.defender import DefenderResult, DefenderThreat
 from vtscanner.pipeline import ScanOptions
 from vtscanner.ratelimit import next_reset
 from vtscanner.signatures import SignatureInfo
 from vtscanner.verdict import Level
-from vtscanner.vtclient import FileReport
+from vtscanner.vtclient import AnalysisStatus, FileReport
 
 
 def rows_by_name(ui):
@@ -303,3 +303,108 @@ def test_ctrl_c_writes_partial_report(tmp_path, cfg, db, clock, monkeypatch, int
     assert outcome.interrupted and not outcome.complete
     assert outcome.report_html.exists()
     assert db.get_scan(outcome.scan_id).status == "interrupted"
+
+
+def test_file_no_engine_has_analyzed_is_unknown_and_asked_again(tmp_path, cfg, db, clock):
+    folder = tmp_path / "juego"
+    exe = write(folder / "a.exe", MZ + b"a")
+    factory = Factory({sha_of(exe): FileReport("", 0, 0, 0)})
+    ui = RecordingUI()
+    make_scanner(cfg, db, clock, ui, factory).run(ScanOptions(target=str(folder)))
+    assert ui.summary[0][0].level == Level.UNKNOWN  # antes salía "Limpio" con 0 de 0 motores
+    clock.now += 8 * 86400
+    make_scanner(cfg, db, clock, RecordingUI(), factory).run(ScanOptions(target=str(folder)))
+    assert factory.calls == ["users", "files"]
+
+
+def test_upload_is_skipped_if_the_file_changed_or_cannot_be_read(tmp_path, cfg, db, clock, monkeypatch):
+    folder = tmp_path / "juego"
+    bat = write(folder / "instalar.bat", b"@echo off\r\necho AAAA\r\n")
+
+    class ChangesBeforeUpload(RecordingUI):
+        def select_uploads(self, items, cost):
+            bat.write_bytes(b"@echo off\r\necho BBBB\r\n")  # mismo tamaño, otro contenido
+            return [1]
+
+    factory = Factory()
+    ui = ChangesBeforeUpload()
+    make_scanner(cfg, db, clock, ui, factory).run(ScanOptions(target=str(folder), upload=True))
+    assert "upload" not in factory.calls and "ha cambiado" in ui.text()
+
+    def locked(path, stop=None):
+        raise PermissionError(13, "El archivo está en uso por otro proceso")
+
+    monkeypatch.setattr(pipeline, "sha256_of_file", locked)
+    ui = RecordingUI(uploads=[1])
+    make_scanner(cfg, db, clock, ui, Factory()).run(ScanOptions(target=str(folder), upload=True))
+    assert ui.summary is not None and "no se puede leer" in ui.text()  # sigue y hace el informe
+
+
+def test_defender_is_reused_only_when_resuming_on_purpose(tmp_path, cfg, db, clock):
+    cfg.virustotal.daily_limit = 1  # el análisis queda a medias
+    folder = tmp_path / "juego"
+    write(folder / "a.exe", MZ + b"a")
+    write(folder / "b.exe", MZ + b"b")
+    runs = []
+
+    def defender(target, report_only=True, on_tick=None):
+        runs.append(target)
+        return DefenderResult(ok=True, found=0)
+
+    def scan(resume_scan_id=None):
+        return make_scanner(cfg, db, clock, RecordingUI(), Factory(), defender_runner=defender).run(
+            ScanOptions(target=str(folder), defender=True), resume_scan_id=resume_scan_id
+        )
+
+    first = scan()
+    scan(resume_scan_id=first.scan_id)
+    assert len(runs) == 1  # Continuar reutiliza el análisis de Defender
+    scan()
+    assert len(runs) == 2  # un análisis nuevo de la carpeta lo repite: puede haber cambiado
+
+
+def test_dry_run_leaves_saved_scans_alone(tmp_path, cfg, db, clock):
+    cfg.virustotal.daily_limit = 2
+    folder = tmp_path / "juego"
+    for i in range(4):
+        write(folder / f"f{i}.exe", MZ + bytes([i]))
+    paused = make_scanner(cfg, db, clock, RecordingUI(), Factory()).run(
+        ScanOptions(target=str(folder), upload=True, defender=True)
+    )
+    dry = make_scanner(cfg, db, clock, RecordingUI(), Factory()).run(ScanOptions(target=str(folder), dry_run=True))
+    assert db.get_scan(paused.scan_id).options["upload"] is True  # no le cambia las opciones
+    assert db.get_scan(dry.scan_id).status == "done"
+    assert db.find_resumable_scan(None).id == paused.scan_id
+
+
+def test_run_with_the_quota_already_used_up(tmp_path, cfg, db, clock):
+    cfg.virustotal.daily_limit = 1
+    folder = tmp_path / "juego"
+    write(folder / "a.exe", MZ + b"a")
+    write(folder / "b.exe", MZ + b"b")
+    make_scanner(cfg, db, clock, RecordingUI(), Factory()).run(ScanOptions(target=str(folder)))
+    ui = RecordingUI()
+    outcome = make_scanner(cfg, db, clock, ui, Factory()).run(ScanOptions(target=str(folder)))
+    assert not outcome.complete and ui.summary is not None
+    assert "agotada" in ui.text()
+
+
+def test_lost_analysis_stops_being_checked(tmp_path, cfg, db, clock):
+    folder = tmp_path / "juego"
+    bat = write(folder / "instalar.bat", b"@echo off\r\necho perdido\r\n")
+    db.put_vt_pending(sha_of(bat), "an-perdido", clock.now)
+
+    class LostVT(FakeVT):
+        def get_analysis(self, analysis_id, sha):
+            self._hit("analyses")
+            return AnalysisStatus("missing")
+
+    class LostFactory(Factory):
+        def __call__(self, api_key, limiter, cfg, on_wait=None):
+            self.instances.append(LostVT(limiter, {}))
+            return self.instances[-1]
+
+    factory = LostFactory()
+    make_scanner(cfg, db, clock, RecordingUI(), factory).run(ScanOptions(target=str(folder)))
+    assert factory.calls == ["users", "analyses", "files"]
+    assert db.get_vt_record(sha_of(bat)).state == "not_found"  # ya no se comprueba más; se podrá subir

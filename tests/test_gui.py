@@ -1,6 +1,7 @@
 """Pruebas de la ventana (pytest-qt, sin mostrarla en pantalla)."""
 
 import threading
+import time
 
 from PySide6.QtCore import QSettings, Qt
 from PySide6.QtWidgets import QDialog
@@ -113,6 +114,16 @@ def test_upload_dialog_selection(qtbot):
     assert dialog.selected() == [1, 2]
     assert "3 consultas" in dialog.summary.text()  # el grande necesita 2
     assert dialog.ok_button.isEnabled()
+
+
+def test_upload_dialog_marks_hundreds_quickly(qtbot):
+    items = [UploadItem(i + 1, f"C:\\x\\f{i}.exe", f"f{i}.exe", 1000, "sin firma", []) for i in range(400)]
+    dialog = UploadDialog(items, UploadCost(400, 400, 400_000, 500), big_bytes=32 * 1024 * 1024)
+    qtbot.addWidget(dialog)
+    started = time.perf_counter()
+    dialog._set_all(True)
+    assert time.perf_counter() - started < 2  # antes, más de un minuto y medio
+    assert len(dialog.selected()) == 400 and "400 archivos" in dialog.summary.text()
 
 
 def test_api_key_dialog_validates_and_saves(qtbot, no_api_key, monkeypatch):
@@ -241,6 +252,18 @@ def test_window_estimate_only(qtbot, cfg, tmp_path):
     qtbot.waitUntil(lambda: window.worker is None and not window.start_page.estimate_label.isHidden(), timeout=20000)
     assert "2 consultas" in window.start_page.estimate_label.text()
     assert factory.instances == []  # la simulación no se conecta
+    assert window.start_page.resume_box.isHidden()  # ni deja un análisis "sin terminar"
+
+
+def test_window_estimate_without_executables(qtbot, cfg, tmp_path):
+    folder = tmp_path / "docs"
+    write(folder / "leeme.txt", b"hola")
+    window = make_window(cfg, tmp_path, qtbot, Factory())
+    window.start_page.drop.set_path(str(folder))
+    window.start_page._update_buttons()
+    qtbot.mouseClick(window.start_page.estimate_button, Qt.MouseButton.LeftButton)
+    qtbot.waitUntil(lambda: window.worker is None and not window.start_page.estimate_label.isHidden(), timeout=20000)
+    assert "No hay ejecutables" in window.start_page.estimate_label.text()
 
 
 def test_window_upload_flow(qtbot, cfg, tmp_path, monkeypatch):

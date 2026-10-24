@@ -17,7 +17,7 @@ from . import defender as defender_mod
 from .config import Config
 from .db import Database, VtRecord
 from .defender import DefenderResult
-from .hashing import HashResult, group_by_hash, hash_entries
+from .hashing import HashResult, group_by_hash, hash_entries, sha256_of_file
 from .ratelimit import DailyQuotaExceeded, RateLimiter, format_local_time
 from .report import ReportRow, ReportSummary, human_size, plural, report_basename, write_csv, write_html
 from .signatures import (
@@ -41,7 +41,7 @@ from .verdict import (
 )
 from .vtclient import AuthError, FileReport, TransientError, VTClient, VTError, gui_url
 from .walker import SIGNAL_DISGUISED, SIGNAL_DOUBLE_EXT, SIGNAL_HIDDEN, SIGNAL_RTLO, Walker, WalkResult
-from .winutils import IS_WINDOWS, allow_sleep, fs_path, path_key, prevent_sleep
+from .winutils import IS_WINDOWS, allow_sleep, path_key, prevent_sleep
 
 log = logging.getLogger(__name__)
 
@@ -276,7 +276,9 @@ class Scanner:
         findings = any(r.level >= Level.HIGH for r in rows)
         summary = self._summary(target, started, options, state, rows, complete, pending)
         html_path, csv_path = self._write_reports(target, rows, summary)
-        if interrupted:
+        if options.dry_run:
+            status = "done"  # una simulación nunca se continúa
+        elif interrupted:
             status = "interrupted"
         elif complete:
             status = "done"
@@ -300,15 +302,18 @@ class Scanner:
         self, target: str, root_key: str, options: ScanOptions, resume_scan_id: int | None
     ) -> tuple[int, dict[str, Any] | None]:
         scan = None
-        if resume_scan_id is not None:
-            scan = self.db.get_scan(resume_scan_id)
-        if scan is None:
-            scan = self.db.find_resumable_scan(root_key)
+        # Una simulación no continúa ni cambia un análisis a medias
+        if not options.dry_run:
+            if resume_scan_id is not None:
+                scan = self.db.get_scan(resume_scan_id)
+            if scan is None:
+                scan = self.db.find_resumable_scan(root_key)
         if scan is not None and scan.root_key == root_key:
             self.db.set_scan_options(scan.id, options.stored())
             self.db.set_scan_status(scan.id, "running")
             self._say("Se continúa el escaneo anterior de esta carpeta (no se repite lo ya hecho).")
-            return scan.id, scan.defender
+            # Defender solo se reutiliza al continuar a propósito; si no, la carpeta puede haber cambiado
+            return scan.id, scan.defender if resume_scan_id is not None else None
         return self.db.create_scan(target, root_key, options.stored()), None
 
     # ---- conexión -----------------------------------------------------------
@@ -317,6 +322,11 @@ class Scanner:
         client = self.client_factory(
             self.api_key, self.limiter, self.cfg.virustotal, on_wait=self.ui.waiting
         )
+        # Lanza AuthError si la clave no vale. No gasta cuota, así que se pregunta siempre
+        quota = client.get_user_quota()
+        if quota is not None:
+            used, allowed = quota
+            self.limiter.sync_with_server(used, allowed)
         limit = self.limiter.effective_daily_limit()
         if self.limiter.remaining_today() <= 0:
             self._say(
@@ -324,13 +334,7 @@ class Scanner:
                 f"{format_local_time(self.limiter.next_reset())} (hora local).",
                 "warn",
             )
-            self._report_quota()
-            return client
-        quota = client.get_user_quota()  # lanza AuthError si la clave no vale
-        if quota is not None:
-            used, allowed = quota
-            self.limiter.sync_with_server(used, allowed)
-            limit = self.limiter.effective_daily_limit()
+        elif quota is not None:
             self._say(
                 f"Clave de VirusTotal válida. Cuota de hoy: {self.limiter.used_today()} de {limit} usadas.",
                 "ok",
@@ -494,7 +498,10 @@ class Scanner:
             needed = (
                 record is None
                 or options.refresh
-                or (record.state == "not_found" and now - record.updated_at > not_found_ttl)
+                or (
+                    (record.state == "not_found" or record.total == 0)
+                    and now - record.updated_at > not_found_ttl
+                )
             )
             if needed:
                 planned.append((min(file_priority(r, trusted) for r in results), sha))
@@ -509,7 +516,8 @@ class Scanner:
         limit = self.limiter.effective_daily_limit()
         remaining = self.limiter.remaining_today()
         distinct = plural(len(state.groups), "archivo distinto", "archivos distintos")
-        self.ui.estimate(needed, remaining, needed / per_minute)
+        if state.groups:
+            self.ui.estimate(needed, remaining, needed / per_minute)
         if needed == 0:
             if state.groups:
                 self._say(f"{distinct}, todo ya en caché: no hace falta consultar nada.")
@@ -523,8 +531,8 @@ class Scanner:
         if needed > remaining:
             self._say(
                 f"No cabe todo hoy: harán falta unos {days} día(s) más. La cuota se reinicia a las "
-                f"{format_local_time(self.limiter.next_reset())} (hora local); continúa con --resume "
-                "o usa --wait para que siga solo.",
+                f"{format_local_time(self.limiter.next_reset())} (hora local); luego pulsa Continuar "
+                "(o usa --resume en la terminal), o marca que espere y siga solo (--wait).",
                 "warn",
             )
         if dry_run:
@@ -669,7 +677,7 @@ class Scanner:
                     self._end()
                     self._say(
                         f"Cuota diaria agotada. Se ha guardado el progreso; continúa después de las "
-                        f"{reset} (hora local) con: python vtscan.py --resume",
+                        f"{reset} (hora local) con Continuar (o --resume en la terminal).",
                         "warn",
                     )
                     state.notes.append(f"Cuota diaria agotada; la cuota se reinicia a las {reset}.")
@@ -748,6 +756,10 @@ class Scanner:
         report = status.report
         if status.status == "missing":
             report = client.get_file(sha)
+            if report is None:
+                # Ni el análisis ni el archivo existen ya: se deja de comprobar y se podrá subir otra vez
+                self.db.put_vt_not_found(sha)
+                return True
         if report is not None:
             report.sha256 = sha
             self._store_report(report, "upload")
@@ -760,15 +772,17 @@ class Scanner:
         return False
 
     def _do_upload(self, client: VTClient, sha: str, path: str, size: int) -> str | None:
-        try:
-            st = os.stat(fs_path(path))
-        except OSError:
-            st = None
-        if st is None or st.st_size != size:
-            self.db.remove_from_queue(sha)
-            self._say(f"No se sube {os.path.basename(path)}: el archivo ya no está o ha cambiado.", "warn")
-            return None
         name = os.path.basename(path)
+        # La cola dura entre ejecuciones: si el contenido ya no es el mismo, el análisis
+        # se guardaría con el hash viejo; si no se puede leer (bloqueado), se salta
+        try:
+            unchanged = sha256_of_file(path)[0] == sha
+        except OSError:
+            unchanged = False
+        if not unchanged:
+            self.db.remove_from_queue(sha)
+            self._say(f"No se sube {name}: el archivo ya no está, no se puede leer o ha cambiado.", "warn")
+            return None
         self.ui.task_update(detail=f"subiendo {name} ({human_size(size)})")
 
         def progress(sent: int, total: int) -> None:

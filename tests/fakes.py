@@ -67,15 +67,15 @@ class FakeVT:
         self.calls = []
         self.analysis_calls = {}
 
-    def _hit(self, label):
-        self.limiter.wait_for_slot(self.on_wait)
+    def _hit(self, label, daily=True):
+        self.limiter.wait_for_slot(self.on_wait, daily)
         self.limiter.record(label, 200)
         self.calls.append(label)
         if self.after_call:
             self.after_call(self.calls)
 
     def get_user_quota(self):
-        self._hit("users")
+        self._hit("users", daily=False)
         return None
 
     def get_file(self, sha):

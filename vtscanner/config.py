@@ -81,16 +81,17 @@ DEFAULT_NO_SNIFF_EXTENSIONS = [
     ".ogg_", ".m4a_", ".cache", ".shader", ".cso", ".fxo", ".spv", ".pdb",
     # Modelos 3D
     ".fbx", ".obj", ".gltf", ".glb", ".dae", ".3ds", ".blend", ".mesh",
-    # Texto y documentos
-    ".txt", ".md", ".nfo", ".json", ".xml", ".ini", ".cfg", ".conf", ".yml",
-    ".yaml", ".csv", ".log", ".lua", ".html", ".htm", ".css", ".pdf", ".rtf",
+    # Texto y documentos (.txt, .nfo, .pdf, .rtf, .html y los comprimidos sí se miran:
+    # son los disfraces típicos de un ejecutable y suele haber pocos)
+    ".md", ".json", ".xml", ".ini", ".cfg", ".conf", ".yml",
+    ".yaml", ".csv", ".log", ".lua", ".css",
     ".po", ".mo", ".srt", ".ass", ".vtt", ".manifest", ".config", ".resx",
     ".vdf", ".acf", ".locres", ".uplugin", ".uproject",
     # Código fuente y bytecode (motores de juego, Ren'Py, Python incluido)
     ".py", ".pyc", ".pyo", ".pyi", ".rpy", ".h", ".hpp", ".c", ".cpp", ".cs",
     ".ush", ".usf", ".hlsl", ".glsl", ".fx", ".tcl",
     # Comprimidos e imágenes de disco
-    ".zip", ".7z", ".rar", ".gz", ".tar", ".xz", ".bz2", ".zst", ".lz4",
+    ".gz", ".tar", ".xz", ".bz2", ".zst", ".lz4",
     ".cab", ".iso", ".img",
     # Recursos de Windows con cabecera MZ que no son código
     ".mui",
@@ -348,7 +349,8 @@ def load_config(path: Path | None = None) -> tuple[Config, list[str]]:
         raise ConfigError(f"No existe el archivo de configuración: {config_path}")
     if config_path.exists():
         try:
-            data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+            # utf-8-sig: el Bloc de notas puede guardarlo con BOM
+            data = tomllib.loads(config_path.read_text(encoding="utf-8-sig"))
         except (tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
             raise ConfigError(f"{config_path}: {exc}") from exc
         for section_name, values in data.items():

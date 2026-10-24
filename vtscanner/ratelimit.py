@@ -99,6 +99,9 @@ class RateLimiter:
         local = self.db.count_requests_since(utc_day_start(now))
         sync = {"day": utc_day(now), "offset": max(0, used - local), "allowed": allowed}
         self.db.set_meta(META_SYNC, json.dumps(sync))
+        if allowed is not None and used < allowed:
+            # Dos 429 seguidos también pueden venir del límite por minuto (la clave usada en otro sitio)
+            self.db.set_meta(META_EXHAUSTED, "")
 
     def mark_exhausted(self) -> None:
         self.db.set_meta(META_EXHAUSTED, utc_day(self.clock()))
@@ -117,9 +120,10 @@ class RateLimiter:
                 on_wait(left, reason)
             self.sleeper(min(1.0, left))
 
-    def wait_for_slot(self, on_wait: WaitCallback | None = None) -> None:
-        """Bloquea hasta que se pueda hacer una petición sin pasarse de los límites."""
-        if self.remaining_today() <= 0:
+    def wait_for_slot(self, on_wait: WaitCallback | None = None, daily: bool = True) -> None:
+        """Bloquea hasta que se pueda hacer una petición sin pasarse de los límites.
+        daily=False para la consulta de la cuota, que no gasta cuota diaria."""
+        if daily and self.remaining_today() <= 0:
             raise DailyQuotaExceeded()
         while True:
             now = self.clock()

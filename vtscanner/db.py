@@ -1,4 +1,4 @@
-"""Base de datos SQLite: cachÃ© de hashes y resultados, registro de peticiones,
+"""Base de datos SQLite: caché de hashes y resultados, registro de peticiones,
 escaneos (para reanudar) y cola de subidas."""
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS file_hashes (
     path_key   TEXT PRIMARY KEY,
     size       INTEGER NOT NULL,
     mtime_ns   INTEGER NOT NULL,
+    file_id    TEXT NOT NULL DEFAULT '',  -- identificador en el disco; en NTFS no cabe en un INTEGER
     sha256     TEXT NOT NULL,
     is_pe      INTEGER NOT NULL DEFAULT 0,
     sig_status TEXT,
@@ -45,7 +46,7 @@ CREATE TABLE IF NOT EXISTS vt_results (
     updated_at    REAL NOT NULL
 );
 
--- Registro de peticiones a la API (lÃ­mite por minuto y cuenta diaria)
+-- Registro de peticiones a la API (límite por minuto y cuenta diaria)
 CREATE TABLE IF NOT EXISTS api_requests (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     ts          REAL NOT NULL,
@@ -67,7 +68,7 @@ CREATE TABLE IF NOT EXISTS scans (
 );
 
 -- Cosas que no se pueden volver a averiguar recorriendo la carpeta
--- (por ejemplo, un archivo que Defender bloqueÃ³ y puso en cuarentena)
+-- (por ejemplo, un archivo que Defender bloqueó y puso en cuarentena)
 CREATE TABLE IF NOT EXISTS scan_events (
     scan_id INTEGER NOT NULL REFERENCES scans(id) ON DELETE CASCADE,
     path    TEXT NOT NULL,
@@ -76,7 +77,7 @@ CREATE TABLE IF NOT EXISTS scan_events (
     PRIMARY KEY (scan_id, path, kind)
 );
 
--- Subidas confirmadas por el usuario que aÃºn no se han hecho
+-- Subidas confirmadas por el usuario que aún no se han hecho
 CREATE TABLE IF NOT EXISTS upload_queue (
     sha256    TEXT PRIMARY KEY,
     path      TEXT NOT NULL,
@@ -132,7 +133,10 @@ class Database:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=NORMAL")
         self.conn.execute("PRAGMA foreign_keys=ON")
+        version = self.conn.execute("PRAGMA user_version").fetchone()[0]
         self.conn.executescript(SCHEMA)
+        if version == 1:
+            self.conn.execute("ALTER TABLE file_hashes ADD COLUMN file_id TEXT NOT NULL DEFAULT ''")
         self.conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         self.conn.commit()
 
@@ -159,31 +163,31 @@ class Database:
                 (key, value),
             )
 
-    # ---- cachÃ© de hashes ----------------------------------------------------
+    # ---- caché de hashes ----------------------------------------------------
 
-    def get_file_hash(self, key: str, size: int, mtime_ns: int) -> CachedHash | None:
+    def get_file_hash(self, key: str, size: int, mtime_ns: int, file_id: str) -> CachedHash | None:
         row = self.conn.execute(
             "SELECT sha256, is_pe, sig_status, sig_signer FROM file_hashes "
-            "WHERE path_key = ? AND size = ? AND mtime_ns = ?",
-            (key, size, mtime_ns),
+            "WHERE path_key = ? AND size = ? AND mtime_ns = ? AND file_id = ?",
+            (key, size, mtime_ns, file_id),
         ).fetchone()
         if row is None:
             return None
         return CachedHash(row["sha256"], bool(row["is_pe"]), row["sig_status"], row["sig_signer"])
 
-    def put_file_hashes(self, rows: Iterable[tuple[str, int, int, str, bool]]) -> None:
-        """rows: (path_key, size, mtime_ns, sha256, is_pe). Borra la firma guardada
+    def put_file_hashes(self, rows: Iterable[tuple[str, int, int, str, str, bool]]) -> None:
+        """rows: (path_key, size, mtime_ns, file_id, sha256, is_pe). Borra la firma guardada
         si el archivo ha cambiado."""
         now = self.clock()
         with self.conn:
             self.conn.executemany(
-                "INSERT INTO file_hashes (path_key, size, mtime_ns, sha256, is_pe, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?) "
+                "INSERT INTO file_hashes (path_key, size, mtime_ns, file_id, sha256, is_pe, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(path_key) DO UPDATE SET size = excluded.size, "
-                "mtime_ns = excluded.mtime_ns, sha256 = excluded.sha256, "
+                "mtime_ns = excluded.mtime_ns, file_id = excluded.file_id, sha256 = excluded.sha256, "
                 "is_pe = excluded.is_pe, sig_status = NULL, sig_signer = NULL, "
                 "updated_at = excluded.updated_at",
-                [(k, s, m, h, int(pe), now) for k, s, m, h, pe in rows],
+                [(k, s, m, i, h, int(pe), now) for k, s, m, i, h, pe in rows],
             )
 
     def put_signatures(self, rows: Iterable[tuple[str, str, str]]) -> None:
@@ -362,7 +366,7 @@ class Database:
             )
 
     def find_resumable_scan(self, root_key: str | None = None) -> ScanRecord | None:
-        """Ãšltimo escaneo sin terminar (de esa carpeta, si se indica)."""
+        """Último escaneo sin terminar (de esa carpeta, si se indica)."""
         query = "SELECT * FROM scans WHERE status IN ('running', 'paused', 'interrupted')"
         params: tuple[Any, ...] = ()
         if root_key is not None:

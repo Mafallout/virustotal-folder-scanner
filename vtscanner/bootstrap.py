@@ -36,9 +36,21 @@ def env_files() -> list[Path]:
     return files
 
 
+def _read_env(path: Path) -> list[str]:
+    """Líneas del .env. Con "VT_API_KEY=..." > .env, PowerShell 5.1 lo escribe en UTF-16,
+    y el Bloc de notas antiguo lo guarda en ANSI."""
+    data = path.read_bytes()
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return data.decode("utf-16").splitlines()
+    try:
+        return data.decode("utf-8-sig").splitlines()
+    except UnicodeDecodeError:
+        return data.decode("cp1252", errors="replace").splitlines()
+
+
 def _key_from_file(path: Path) -> str | None:
     try:
-        lines = path.read_text(encoding="utf-8-sig").splitlines()
+        lines = _read_env(path)
     except OSError:
         return None
     for line in lines:
@@ -50,7 +62,7 @@ def _key_from_file(path: Path) -> str | None:
         if name.startswith("export "):
             name = name[len("export ") :].strip()
         if name == "VT_API_KEY":
-            value = value.strip().strip('"').strip("'").strip()
+            value = value.split("#", 1)[0].strip().strip('"').strip("'").strip()
             if value:
                 return value
     return None
@@ -70,7 +82,7 @@ def save_api_key(key: str) -> Path:
     target = PROJECT_DIR / ".env" if is_writable(PROJECT_DIR) else writable_base() / ".env"
     lines: list[str] = []
     if target.exists():
-        lines = target.read_text(encoding="utf-8-sig").splitlines()
+        lines = _read_env(target)
     new_line = f"VT_API_KEY={key.strip()}"
     output: list[str] = []
     replaced = False

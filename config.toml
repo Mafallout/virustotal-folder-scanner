@@ -32,7 +32,7 @@ requests_per_minute = 4
 daily_limit = 500
 # Hasta este tamaño se sube directamente; por encima se pide una URL de subida.
 direct_upload_max_mb = 32
-# Un hash que VirusTotal no conocía se vuelve a consultar pasados estos días.
+# Un hash que VirusTotal no conocía (o aún no había analizado) se vuelve a consultar pasados estos días.
 not_found_cache_days = 7
 # Tras subir un archivo, cuándo se mira por primera vez si ya está analizado.
 analysis_first_check_seconds = 90

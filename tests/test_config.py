@@ -21,6 +21,13 @@ def test_project_config_matches_defaults():
     assert cfg.signatures.skip_trusted_signed is False
 
 
+def test_config_saved_with_bom(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text("[scan]\nhash_workers = 2\n", encoding="utf-8-sig")
+    cfg, _ = load_config(path)
+    assert cfg.scan.hash_workers == 2
+
+
 def test_overrides_and_normalizes(tmp_path):
     path = write_toml(
         tmp_path,

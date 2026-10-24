@@ -49,6 +49,18 @@ def test_main_without_key_fails(tmp_path, no_api_key):
     assert cli.main([str(folder), "--config", str(config_file(tmp_path))]) == cli.EXIT_ERROR
 
 
+def test_main_unexpected_error_is_not_findings(tmp_path, monkeypatch):
+    folder = tmp_path / "juego"
+    write(folder / "a.exe", MZ)
+
+    def broken(self, options, resume_id=None):
+        raise RuntimeError("fallo de prueba")
+
+    monkeypatch.setattr(cli.Scanner, "run", broken)
+    # Antes salía con 1, que significa "hay hallazgos"
+    assert cli.main([str(folder), "--dry-run", "--config", str(config_file(tmp_path))]) == cli.EXIT_ERROR
+
+
 def test_main_errors(tmp_path):
     cfg = str(config_file(tmp_path))
     assert cli.main(["--config", cfg]) == cli.EXIT_ERROR  # sin carpeta

@@ -175,8 +175,12 @@ class UploadDialog(QDialog):
 
     def _set_all(self, checked: bool) -> None:
         state = Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
+        # Sin bloquear las señales, el resumen se recalcula una vez por fila y con cientos se cuelga
+        self.table.blockSignals(True)
         for row in range(self.table.rowCount()):
             self.table.item(row, 0).setCheckState(state)
+        self.table.blockSignals(False)
+        self._update_summary()
 
     def selected(self) -> list[int]:
         return [
@@ -186,7 +190,8 @@ class UploadDialog(QDialog):
         ]
 
     def _update_summary(self, *_: object) -> None:
-        chosen = [item for item in self.items if item.number in set(self.selected())]
+        selected = set(self.selected())
+        chosen = [item for item in self.items if item.number in selected]
         requests = sum(2 if item.size > self.big_bytes else 1 for item in chosen)
         size = human_size(sum(item.size for item in chosen))
         self.summary.setText(

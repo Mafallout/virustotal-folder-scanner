@@ -1,9 +1,11 @@
 import hashlib
 import os
+import sqlite3
 
 from conftest import MZ, write
 from vtscanner import hashing
 from vtscanner.config import ScanConfig
+from vtscanner.db import Database
 from vtscanner.hashing import group_by_hash, hash_entries, sha256_of_file
 from vtscanner.walker import Walker
 
@@ -31,6 +33,32 @@ def test_cache_avoids_rehashing_and_detects_changes(tmp_path, db):
     os.utime(target, ns=(1_700_000_000_000_000_000, 1_700_000_000_000_000_000))
     third = hash_entries(entries(tmp_path), db, workers=2)
     assert not third[0].from_cache and third[0].sha256 != first[0].sha256
+
+
+def test_replaced_file_with_same_size_and_date_is_rehashed(tmp_path, db):
+    target = write(tmp_path / "game.exe", MZ + b"ORIGINAL")
+    st = os.stat(target)
+    first = hash_entries(entries(tmp_path), db, workers=2)
+    os.remove(target)
+    target.write_bytes(MZ + b"INFECTED")  # otro archivo con el mismo tamaño y la misma fecha
+    os.utime(target, ns=(st.st_atime_ns, st.st_mtime_ns))
+    second = hash_entries(entries(tmp_path), db, workers=2)
+    assert not second[0].from_cache and second[0].sha256 != first[0].sha256
+
+
+def test_old_database_gets_the_file_id_column(tmp_path):
+    path = tmp_path / "vieja.sqlite3"
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "CREATE TABLE file_hashes (path_key TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime_ns INTEGER NOT NULL, "
+        "sha256 TEXT NOT NULL, is_pe INTEGER NOT NULL DEFAULT 0, sig_status TEXT, sig_signer TEXT, "
+        "updated_at REAL NOT NULL)"
+    )
+    conn.execute("PRAGMA user_version=1")
+    conn.close()
+    with Database(path) as db:
+        db.put_file_hashes([("clave", 1, 2, "123", "abc", True)])
+        assert db.get_file_hash("clave", 1, 2, "123").sha256 == "abc"
 
 
 def test_duplicates_are_grouped(tmp_path, db):

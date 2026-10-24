@@ -33,6 +33,14 @@ def test_sliding_window_survives_restart(db, clock):
     assert clock.now >= start + 61
 
 
+def test_server_quota_clears_a_wrong_exhausted_mark(db, clock):
+    lim = limiter(db, clock)
+    lim.mark_exhausted()  # dos 429 seguidos, pero eran del límite por minuto
+    assert lim.remaining_today() == 0
+    lim.sync_with_server(10, 500)
+    assert lim.remaining_today() == 490
+
+
 def test_daily_limit(db, clock):
     lim = limiter(db, clock, per_minute=100, daily=3)
     spend(lim, 3)

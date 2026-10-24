@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import threading
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
@@ -47,6 +48,15 @@ def sha256_of_file(path: str, stop: threading.Event | None = None) -> tuple[str,
     return digest.hexdigest(), is_pe
 
 
+def file_id(path: str) -> str:
+    """Identificador del archivo en el disco: cambia si se sustituye por otro, aunque
+    tenga el mismo tamaño y la misma fecha."""
+    try:
+        return str(os.stat(fs_path(path)).st_ino)
+    except OSError:
+        return ""
+
+
 def hash_entries(
     entries: list[FileEntry],
     db: Database,
@@ -61,8 +71,9 @@ def hash_entries(
     results: list[HashResult] = []
     pending: list[FileEntry] = []
 
+    ids = {entry.path: file_id(entry.path) for entry in entries}
     for entry in entries:
-        cached = db.get_file_hash(path_key(entry.path), entry.size, entry.mtime_ns)
+        cached = db.get_file_hash(path_key(entry.path), entry.size, entry.mtime_ns, ids[entry.path])
         if cached is not None:
             results.append(
                 HashResult(
@@ -83,7 +94,7 @@ def hash_entries(
         return results
 
     stop = threading.Event()
-    batch: list[tuple[str, int, int, str, bool]] = []
+    batch: list[tuple[str, int, int, str, str, bool]] = []
     executor = ThreadPoolExecutor(max_workers=workers)
     try:
         futures: dict[Future[tuple[str, bool]], FileEntry] = {
@@ -110,7 +121,7 @@ def hash_entries(
                         )
                 else:
                     results.append(HashResult(entry, sha, is_pe, False))
-                    batch.append((path_key(entry.path), entry.size, entry.mtime_ns, sha, is_pe))
+                    batch.append((path_key(entry.path), entry.size, entry.mtime_ns, ids[entry.path], sha, is_pe))
                     if len(batch) >= 50:
                         db.put_file_hashes(batch)
                         batch.clear()
