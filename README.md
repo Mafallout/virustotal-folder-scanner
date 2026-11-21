@@ -1,121 +1,59 @@
 # vtscan
 
-Programa para Windows que revisa una carpeta en busca de malware con VirusTotal. Busca los ejecutables y scripts que hay dentro, pregunta a VirusTotal si algún antivirus los detecta y te da un informe con los archivos ordenados de más a menos peligroso.
-
-Está pensado para carpetas grandes, como programas descargados de fuentes no oficiales, y funciona con la cuenta gratuita de VirusTotal.
+Revisa una carpeta con VirusTotal y te dice qué archivos pueden ser peligrosos. Está pensado para programas descargados de fuentes no oficiales y funciona con la cuenta gratuita de VirusTotal.
 
 ![Pantalla de resultados](docs/captura.png)
 
-## Descarga
+## Cómo se usa
 
-Baja el zip de la última versión en [Releases](https://github.com/Mafallout/virustotal-folder-scanner/releases), descomprímelo donde quieras y abre `vtscan.exe`. Funciona en Windows 10 y 11 sin instalar Python. La caché y los informes se guardan dentro de esa misma carpeta.
+1. Baja el zip de la [última versión](https://github.com/Mafallout/virustotal-folder-scanner/releases/latest), descomprímelo y abre `vtscan.exe`. No hace falta instalar nada.
+2. Pega tu clave de VirusTotal. Es gratis: crea una cuenta en [virustotal.com](https://www.virustotal.com) y cópiala de tu perfil.
+3. Arrastra una carpeta y pulsa "Analizar".
 
-Como el .exe no lleva firma digital (cuesta dinero), la primera vez Windows puede avisar: pulsa "Más información" y luego "Ejecutar de todas formas". En VirusTotal lo detectan 2 de 71 antivirus, con detecciones genéricas que suelen salir en programas empaquetados con PyInstaller. El enlace al análisis va en cada versión.
+> [!NOTE]
+> Como el .exe no va firmado, Windows puede avisar la primera vez: pulsa "Más información" y "Ejecutar de todas formas". En VirusTotal lo marcan 2 de 71 antivirus, con detecciones genéricas típicas de los programas hechos con PyInstaller.
 
-Cada versión lleva el SHA-256 del zip, para que puedas comprobar que lo que has bajado es lo mismo que subí:
+## Qué te dice
 
-```powershell
-Get-FileHash .\vtscan-0.2.0-windows.zip
-```
+| Nivel | Qué significa |
+| --- | --- |
+| Crítico | Muchos antivirus lo detectan, o varios lo ven como malware grave (un ladrón de contraseñas, un ransomware). No lo ejecutes. |
+| Alto | Varios antivirus lo detectan. Míralo en VirusTotal antes de usarlo. |
+| Medio y Bajo | Una o dos detecciones, o solo genéricas. Muchas veces son falsos positivos. |
+| Desconocido | VirusTotal no lo tiene. No quiere decir que sea seguro. |
+| Limpio | Ningún antivirus lo detecta. |
 
-La primera vez te pide una clave de VirusTotal. Es gratis: crea una cuenta en [virustotal.com](https://www.virustotal.com) y copia la API key de tu perfil.
-
-## Instalación desde el código
-
-Necesitas Windows 10 u 11 y Python 3.11 o superior. En la carpeta del proyecto:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-```
-
-La ventana te pide la clave de VirusTotal la primera vez y la guarda en un archivo `.env` junto al programa, que nunca se sube al repositorio. Si solo usas la terminal, guárdala con este comando y abre una terminal nueva:
-
-```powershell
-setx VT_API_KEY "tu_clave"
-```
-
-## Uso con ventana
-
-Abre `vtscan.exe` (o, desde el código, haz doble clic en `vtscan_gui.pyw`). Arrastra una carpeta (o elígela), marca las opciones y pulsa **Analizar**.
-
-Mientras analiza verás cada archivo según llega, con lo que merece atención arriba y qué antivirus lo detecta. Con **Detener** se guarda lo hecho y puedes continuar más tarde. Al terminar tienes la tabla de resultados con filtros y buscador; con doble clic abres un archivo en VirusTotal, y los botones de abajo abren el informe HTML y el CSV.
-
-**Calcular coste** te dice cuántas consultas y cuánto tiempo hará falta, sin gastar ninguna.
-
-## Uso desde la terminal
-
-```powershell
-.\.venv\Scripts\python.exe vtscan.py "D:\Descargas\Programa"
-```
-
-Cuando termina, abre el informe en el navegador y lo guarda también en CSV para abrirlo con Excel.
-
-Opciones que te pueden venir bien:
-
-- `--dry-run`: calcula cuánto tardaría, sin hacer ninguna consulta.
-- `--defender`: pasa antes Microsoft Defender por la carpeta. Solo avisa.
-- `--upload`: sube a VirusTotal los archivos que no conoce. Antes te enseña la lista y te pregunta.
-- `--all-files`: revisa todos los archivos, no solo los ejecutables.
-
-Con `-h` ves todas.
-
-## Por qué puede tardar
-
-La versión gratuita de VirusTotal deja hacer 4 consultas por minuto y 500 al día. Una carpeta con 250 ejecutables tarda alrededor de una hora la primera vez. El programa espera solo y guarda cada respuesta para no repetir consultas.
-
-Si se acaban las consultas del día, guarda lo que lleva y al día siguiente continúas (botón **Continuar** en la ventana, o `--resume` en la terminal). También puedes marcar que espere y siga solo (`--wait`).
-
-## Cómo leer el informe
-
-Cada archivo sale con un nivel y el motivo:
-
-- Crítico: muchos antivirus lo detectan o varios lo señalan como malware peligroso, por ejemplo un ladrón de contraseñas o un ransomware. No lo ejecutes.
-- Alto: varios antivirus lo detectan. Míralo en VirusTotal antes de usarlo.
-- Medio y Bajo: una o dos detecciones, o detecciones genéricas. Muchas veces son falsos positivos, sobre todo en herramientas, parches y mods.
-- Desconocido: VirusTotal no lo tiene. No quiere decir que sea seguro.
-- Limpio: ningún antivirus lo detecta.
-
-También pueden salir archivos pendientes (aún sin consultar) u omitidos (no se pudieron revisar, por ejemplo por ser demasiado grandes).
-
-Una advertencia sobre la subida de archivos: lo que subes a VirusTotal lo pueden descargar otros investigadores, así que no subas archivos personales.
+Al acabar tienes los resultados con filtros y buscador, y un informe en HTML y CSV.
 
 ## Cómo funciona
 
-1. Recorre la carpeta y se queda con los ejecutables y scripts por su extensión. De los demás archivos lee los dos primeros bytes, para encontrar ejecutables camuflados con otra extensión (empiezan por "MZ"). Los de datos claros, como imágenes o audio, no los abre.
-2. Calcula el SHA-256 de cada uno. A VirusTotal solo le manda ese hash, no el archivo, salvo que actives la subida.
-3. Comprueba la firma digital de cada ejecutable con PowerShell. Lo firmado por fabricantes conocidos (Microsoft, NVIDIA, Valve...) se consulta al final.
-4. Pregunta a VirusTotal por cada hash y guarda la respuesta en una base de datos SQLite. Pasados 30 días se vuelve a preguntar (7 si VirusTotal no lo conocía), porque un archivo nuevo puede tener 0 detecciones hoy y varias dentro de un mes.
-5. Con las detecciones le pone un nivel a cada archivo y hace el informe en HTML y CSV.
+- Busca ejecutables y scripts, también los camuflados con otra extensión.
+- A VirusTotal solo le manda el hash de cada archivo, no el archivo.
+- Guarda cada respuesta, así que no repite consultas.
+- La cuenta gratis deja 4 consultas por minuto y 500 al día, así que 250 ejecutables tardan una hora. Si se acaban, continúas otro día donde lo dejaste.
+- Si quieres, pasa antes Microsoft Defender y sube los archivos que VirusTotal no conoce. Antes de subir te pregunta, porque lo que subes lo pueden descargar otros.
 
 ## Lo que no hace
 
-- No es un antivirus: no vigila el ordenador ni borra nada. Solo cuenta lo que dicen los antivirus de VirusTotal.
-- No abre comprimidos (.zip, .rar, .7z). Si hay ejecutables dentro, descomprímelo antes.
-- De un archivo que VirusTotal no conoce no sabe nada más. Para eso hay que subirlo.
-- Solo funciona en Windows, porque usa la firma digital de Windows y Defender.
+- No es un antivirus: no vigila el ordenador ni borra nada.
+- No abre comprimidos (.zip, .rar, .7z).
+- Solo funciona en Windows 10 y 11.
 
-## Crear el .exe
+## Desde el código
 
-```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-powershell -ExecutionPolicy Bypass -File .\build_exe.ps1
-```
-
-Genera `dist\vtscan-0.2.0-windows.zip` (unos 35 MB), el mismo zip que se publica en Releases.
-
-## Configuración
-
-En `config.toml` puedes cambiar qué extensiones se revisan, qué carpetas se saltan o cuántas detecciones hacen falta para cada nivel. Cada opción lleva un comentario.
-
-## Tests
+Con Python 3.11 o superior:
 
 ```powershell
+python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python.exe -m pytest
 ```
 
-Funcionan sin conexión y sin clave.
+- Ventana: doble clic en `vtscan_gui.pyw`.
+- Terminal: `.\.venv\Scripts\python.exe vtscan.py "D:\Descargas\Programa"`. Con `-h` ves las opciones.
+- Tests: `.\.venv\Scripts\python.exe -m pytest`. Van sin conexión y sin clave.
+- Crear el .exe: `powershell -ExecutionPolicy Bypass -File .\build_exe.ps1`.
+
+Qué extensiones se revisan, qué carpetas se saltan y cuántas detecciones hacen falta para cada nivel se cambia en `config.toml`.
 
 ## Licencia
 
