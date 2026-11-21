@@ -6,7 +6,21 @@ Está pensado para carpetas grandes, como programas descargados de fuentes no of
 
 ![Pantalla de resultados](docs/captura.png)
 
-## Instalación
+## Descarga
+
+Baja el zip de la última versión en [Releases](https://github.com/Mafallout/virustotal-folder-scanner/releases), descomprímelo donde quieras y abre `vtscan.exe`. Funciona en Windows 10 y 11 sin instalar Python. La caché y los informes se guardan dentro de esa misma carpeta.
+
+Como el .exe no lleva firma digital (cuesta dinero), la primera vez Windows puede avisar: pulsa "Más información" y luego "Ejecutar de todas formas". En VirusTotal lo detectan 2 de 71 antivirus, con detecciones genéricas que suelen salir en programas empaquetados con PyInstaller. El enlace al análisis va en cada versión.
+
+Cada versión lleva el SHA-256 del zip, para que puedas comprobar que lo que has bajado es lo mismo que subí:
+
+```powershell
+Get-FileHash .\vtscan-0.2.0-windows.zip
+```
+
+La primera vez te pide una clave de VirusTotal. Es gratis: crea una cuenta en [virustotal.com](https://www.virustotal.com) y copia la API key de tu perfil.
+
+## Instalación desde el código
 
 Necesitas Windows 10 u 11 y Python 3.11 o superior. En la carpeta del proyecto:
 
@@ -15,7 +29,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-También necesitas una clave de VirusTotal, que es gratis: crea una cuenta en [virustotal.com](https://www.virustotal.com) y copia la API key de tu perfil. La ventana te la pide la primera vez y la guarda en un archivo `.env` junto al programa, que nunca se sube al repositorio. Si solo usas la terminal, guárdala con este comando y abre una terminal nueva:
+La ventana te pide la clave de VirusTotal la primera vez y la guarda en un archivo `.env` junto al programa, que nunca se sube al repositorio. Si solo usas la terminal, guárdala con este comando y abre una terminal nueva:
 
 ```powershell
 setx VT_API_KEY "tu_clave"
@@ -23,7 +37,7 @@ setx VT_API_KEY "tu_clave"
 
 ## Uso con ventana
 
-Haz doble clic en `vtscan_gui.pyw`. Arrastra una carpeta (o elígela), marca las opciones y pulsa **Analizar**.
+Abre `vtscan.exe` (o, desde el código, haz doble clic en `vtscan_gui.pyw`). Arrastra una carpeta (o elígela), marca las opciones y pulsa **Analizar**.
 
 Mientras analiza verás cada archivo según llega, con lo que merece atención arriba y qué antivirus lo detecta. Con **Detener** se guarda lo hecho y puedes continuar más tarde. Al terminar tienes la tabla de resultados con filtros y buscador; con doble clic abres un archivo en VirusTotal, y los botones de abajo abren el informe HTML y el CSV.
 
@@ -88,7 +102,7 @@ Una advertencia sobre la subida de archivos: lo que subes a VirusTotal lo pueden
 powershell -ExecutionPolicy Bypass -File .\build_exe.ps1
 ```
 
-Genera `dist\vtscan-0.2.0-windows.zip` (unos 35 MB). Descomprímelo donde quieras y abre `vtscan.exe`; la caché y los informes se guardan dentro de esa misma carpeta. Como el .exe no lleva firma digital (cuesta dinero), la primera vez Windows puede avisar: pulsa "Más información" y luego "Ejecutar de todas formas".
+Genera `dist\vtscan-0.2.0-windows.zip` (unos 35 MB), el mismo zip que se publica en Releases.
 
 ## Configuración
 
