@@ -1,6 +1,15 @@
+<div align="center">
+
 # vtscan
 
-Revisa una carpeta con VirusTotal y te dice qué archivos pueden ser peligrosos. Está pensado para programas descargados de fuentes no oficiales y funciona con la cuenta gratuita de VirusTotal.
+Revisa una carpeta con VirusTotal y te dice qué archivos pueden ser peligrosos.<br>
+Está pensado para programas descargados de fuentes no oficiales y funciona con la cuenta gratuita.
+
+[![versión](https://img.shields.io/github/v/release/Mafallout/virustotal-folder-scanner?label=versi%C3%B3n&color=0969da)](https://github.com/Mafallout/virustotal-folder-scanner/releases/latest)
+![licencia](https://img.shields.io/github/license/Mafallout/virustotal-folder-scanner?label=licencia&color=1a7f37)
+![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4)
+
+</div>
 
 ![Pantalla de resultados](docs/captura.png)
 
@@ -17,11 +26,11 @@ Revisa una carpeta con VirusTotal y te dice qué archivos pueden ser peligrosos.
 
 | Nivel | Qué significa |
 | --- | --- |
-| Crítico | Muchos antivirus lo detectan, o varios lo ven como malware grave (un ladrón de contraseñas, un ransomware). No lo ejecutes. |
-| Alto | Varios antivirus lo detectan. Míralo en VirusTotal antes de usarlo. |
-| Medio y Bajo | Una o dos detecciones, o solo genéricas. Muchas veces son falsos positivos. |
-| Desconocido | VirusTotal no lo tiene. No quiere decir que sea seguro. |
-| Limpio | Ningún antivirus lo detecta. |
+| ![Crítico](https://img.shields.io/badge/Cr%C3%ADtico-d1242f) | Muchos antivirus lo detectan, o varios lo ven como malware grave (un ladrón de contraseñas, un ransomware). No lo ejecutes. |
+| ![Alto](https://img.shields.io/badge/Alto-e16f24) | Varios antivirus lo detectan. Míralo en VirusTotal antes de usarlo. |
+| ![Medio y Bajo](https://img.shields.io/badge/Medio%20y%20Bajo-bf8700) | Una o dos detecciones, o solo genéricas. Muchas veces son falsos positivos. |
+| ![Desconocido](https://img.shields.io/badge/Desconocido-0969da) | VirusTotal no lo tiene. No quiere decir que sea seguro. |
+| ![Limpio](https://img.shields.io/badge/Limpio-1a7f37) | Ningún antivirus lo detecta. |
 
 Al acabar tienes los resultados con filtros y buscador, y un informe en HTML y CSV.
 
