@@ -66,6 +66,21 @@ También pueden salir archivos pendientes (aún sin consultar) u omitidos (no se
 
 Una advertencia sobre la subida de archivos: lo que subes a VirusTotal lo pueden descargar otros investigadores, así que no subas archivos personales.
 
+## Cómo funciona
+
+1. Recorre la carpeta y se queda con los ejecutables y scripts por su extensión. De los demás archivos lee los dos primeros bytes, para encontrar ejecutables camuflados con otra extensión (empiezan por "MZ"). Los de datos claros, como imágenes o audio, no los abre.
+2. Calcula el SHA-256 de cada uno. A VirusTotal solo le manda ese hash, no el archivo, salvo que actives la subida.
+3. Comprueba la firma digital de cada ejecutable con PowerShell. Lo firmado por fabricantes conocidos (Microsoft, NVIDIA, Valve...) se consulta al final.
+4. Pregunta a VirusTotal por cada hash y guarda la respuesta en una base de datos SQLite. Pasados 30 días se vuelve a preguntar (7 si VirusTotal no lo conocía), porque un archivo nuevo puede tener 0 detecciones hoy y varias dentro de un mes.
+5. Con las detecciones le pone un nivel a cada archivo y hace el informe en HTML y CSV.
+
+## Lo que no hace
+
+- No es un antivirus: no vigila el ordenador ni borra nada. Solo cuenta lo que dicen los antivirus de VirusTotal.
+- No abre comprimidos (.zip, .rar, .7z). Si hay ejecutables dentro, descomprímelo antes.
+- De un archivo que VirusTotal no conoce no sabe nada más. Para eso hay que subirlo.
+- Solo funciona en Windows, porque usa la firma digital de Windows y Defender.
+
 ## Crear el .exe
 
 ```powershell
@@ -87,3 +102,7 @@ En `config.toml` puedes cambiar qué extensiones se revisan, qué carpetas se sa
 ```
 
 Funcionan sin conexión y sin clave.
+
+## Licencia
+
+MIT. Las piezas de terceros y sus licencias están en `LICENCIAS-TERCEROS.txt`.

@@ -65,7 +65,7 @@ Get-ChildItem "$qt\translations" -File -ErrorAction SilentlyContinue |
 
 # Junto al .exe: la configuración (editable), el README y las licencias.
 # Nunca se copian .env, data ni reports: son datos de quien lo usa.
-Copy-Item config.toml, README.md, LICENCIAS-TERCEROS.txt "dist\vtscan\"
+Copy-Item config.toml, README.md, LICENSE, LICENCIAS-TERCEROS.txt "dist\vtscan\"
 
 $zip = "dist\vtscan-$version-windows.zip"
 Compress-Archive -Path "dist\vtscan" -DestinationPath $zip
