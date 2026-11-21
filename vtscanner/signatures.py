@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Callable, Iterable
 
-from .winutils import IS_WINDOWS, fs_path
+from .winutils import IS_WINDOWS, POWERSHELL, fs_path
 
 # Extensiones que pueden llevar firma además de los ejecutables PE
 SIGNABLE_EXTENSIONS = {".msi", ".msp", ".ps1", ".psm1"}
@@ -109,7 +109,7 @@ def _run_batch(paths: list[str]) -> list[SignatureInfo]:
         encoded = base64.b64encode(_PS_SCRIPT.encode("utf-16-le")).decode("ascii")
         try:
             subprocess.run(
-                ["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
+                [POWERSHELL, "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
                 env=env,
                 capture_output=True,
                 timeout=BATCH_TIMEOUT_SECONDS,

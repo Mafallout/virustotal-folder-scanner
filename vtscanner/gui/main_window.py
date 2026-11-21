@@ -58,9 +58,9 @@ from ..ratelimit import RateLimiter, format_local_time
 from ..report import ReportRow, ReportSummary, engines_text, human_size, plural
 from ..ui import UploadCost, UploadItem
 from ..verdict import LEVEL_ORDER, Level
-from ..winutils import open_in_default_app
+from ..winutils import EXPLORER, open_in_default_app
 from .bridge import ScanWorker
-from .dialogs import ApiKeyDialog, UploadDialog, plain_label
+from .dialogs import ApiKeyDialog, UploadDialog, plain_label, plain_tip
 from .results import ROW_ROLE, ResultsFilter, ResultsModel
 from .theme import ACCENT, MUTED, WARNING, level_color, pick
 
@@ -160,7 +160,7 @@ class ElidedLabel(QLabel):
 
     def set_full_text(self, text: str) -> None:
         self.full_text = text
-        self.setToolTip(text)
+        self.setToolTip(plain_tip(text))
         self._update()
 
     def resizeEvent(self, event: Any) -> None:  # noqa: N802
@@ -603,7 +603,7 @@ class ProgressPage(QWidget):
             reason += "\nDetectado por: " + ", ".join(engines)
         item = QListWidgetItem(text)
         item.setData(Qt.ItemDataRole.UserRole, int(level))
-        item.setToolTip(reason)
+        item.setToolTip(plain_tip(reason))
         if level >= Level.LOW:
             # Arriba, de más a menos grave; el resto, debajo y el último primero
             row = 0
@@ -800,11 +800,12 @@ class ResultsPage(QWidget):
 
 def show_in_explorer(path: str) -> None:
     if os.path.exists(path):
-        subprocess.Popen(f'explorer /select,"{path}"')
+        subprocess.Popen(f'"{EXPLORER}" /select,"{path}"')
     else:
         folder = os.path.dirname(path)
         if os.path.isdir(folder):
-            open_in_default_app(Path(folder))
+            # La barra final evita que Windows ejecute un "carpeta.exe" que esté al lado
+            os.startfile(folder + "\\")  # type: ignore[attr-defined]
 
 
 # ---------------------------------------------------------------------------
@@ -937,6 +938,7 @@ class MainWindow(QMainWindow):
             defender=bool(stored.get("defender")),
             all_files=bool(stored.get("all_files")),
             wait=self.start_page.wait.isChecked(),
+            refresh=bool(stored.get("refresh")),
         )
         self.start_scan(options, resume_id=scan.id)
 
@@ -948,6 +950,7 @@ class MainWindow(QMainWindow):
                 defender=self.options.defender,
                 all_files=self.options.all_files,
                 wait=self.start_page.wait.isChecked(),
+                refresh=self.options.refresh,
             )
             self.start_scan(options, resume_id=self.last_scan_id)
 
@@ -1098,6 +1101,11 @@ class MainWindow(QMainWindow):
                 )
                 if answer != QMessageBox.StandardButton.Yes:
                     event.ignore()
+                    return
+                if self.worker is None or not self.worker.isRunning():
+                    # Terminó mientras se preguntaba: ya no queda hilo que cierre la ventana
+                    self._save_settings()
+                    event.accept()
                     return
                 self.close_requested = True
                 self.progress_page._stop()

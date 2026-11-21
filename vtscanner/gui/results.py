@@ -9,6 +9,7 @@ from PySide6.QtGui import QFont
 
 from ..report import SIGNAL_LABELS, ReportRow, engines_text, human_size
 from ..verdict import LEVEL_ORDER, Level
+from .dialogs import plain_tip
 from .theme import level_color
 
 COLUMNS = ["Nivel", "Archivo", "Detecciones", "Antivirus", "Etiqueta", "Motivo", "Firma y señales", "Tamaño"]
@@ -76,7 +77,7 @@ class ResultsModel(QAbstractTableModel):
             font.setBold(True)
             return font
         if role == Qt.ItemDataRole.ToolTipRole:
-            return self._tooltip(row, column)
+            return plain_tip(self._tooltip(row, column))
         if role == Qt.ItemDataRole.TextAlignmentRole and column in (2, 7):
             return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         return None
@@ -134,8 +135,8 @@ class ResultsFilter(QSortFilterProxyModel):
         self.setSortRole(SORT_ROLE)
 
     def _refilter(self, change: Any) -> None:
-        # Qt 6.9 sustituyó invalidateRowsFilter() por begin/endFilterChange()
-        if hasattr(self, "beginFilterChange"):
+        # Qt nuevo cambia invalidateRowsFilter() por begin/endFilterChange(), que no llegaron a la vez
+        if hasattr(self, "endFilterChange"):
             self.beginFilterChange()
             change()
             self.endFilterChange(QSortFilterProxyModel.Direction.Rows)

@@ -102,6 +102,17 @@ def test_excluded_dirs(tmp_path):
     assert rels(result) == {os.path.join("keep", "y.js")}
 
 
+def test_system_folder_names_inside_a_download_are_scanned(tmp_path):
+    # Fuera de la raíz de una unidad, estos nombres no son de Windows: pueden esconder algo
+    write(tmp_path / "System Volume Information" / "payload.dll", MZ)
+    write(tmp_path / "$RECYCLE.BIN" / "x.exe", MZ)
+    result = Walker(ScanConfig()).walk(str(tmp_path))
+    assert rels(result) == {
+        os.path.join("System Volume Information", "payload.dll"),
+        os.path.join("$RECYCLE.BIN", "x.exe"),
+    }
+
+
 def test_single_file_target_is_always_analyzed(tmp_path):
     target = write(tmp_path / "cualquiera.txt")
     result = Walker(ScanConfig()).walk(str(target))

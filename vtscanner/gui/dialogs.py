@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 from typing import Any
 
 from PySide6.QtCore import Qt
@@ -34,6 +35,14 @@ def plain_label(text: str = "", word_wrap: bool = True) -> QLabel:
     label.setTextFormat(Qt.TextFormat.PlainText)
     label.setWordWrap(word_wrap)
     return label
+
+
+def plain_tip(text: str) -> str:
+    """Tooltip que se ve tal cual: Qt interpreta HTML en los tooltips y estos textos
+    vienen de la carpeta analizada o de VirusTotal."""
+    if not text:
+        return ""
+    return "<qt>" + html.escape(text).replace("\n", "<br>") + "</qt>"
 
 
 class ApiKeyDialog(QDialog):
@@ -147,7 +156,7 @@ class UploadDialog(QDialog):
             ]
             for column, value in enumerate(values, start=1):
                 cell = QTableWidgetItem(value)
-                cell.setToolTip(item.path if column == 4 else value)
+                cell.setToolTip(plain_tip(item.path if column == 4 else value))
                 self.table.setItem(row, column, cell)
         self.table.itemChanged.connect(self._update_summary)
         layout.addWidget(self.table, 1)

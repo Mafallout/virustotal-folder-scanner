@@ -120,7 +120,7 @@ def resolve_options(
         all_files=args.all_files or bool(stored.get("all_files")),
         wait=args.wait,
         dry_run=args.dry_run,
-        refresh=args.refresh,
+        refresh=args.refresh or bool(stored.get("refresh")),
     )
     return options, resume_id
 

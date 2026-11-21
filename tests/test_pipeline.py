@@ -123,6 +123,45 @@ def test_quota_exhaustion_pauses_and_resume_continues(tmp_path, cfg, db, clock):
     assert db.get_scan(outcome.scan_id).status == "done"
 
 
+def test_refresh_is_kept_when_resuming_and_does_not_repeat_work(tmp_path, cfg, db, clock):
+    folder = tmp_path / "juego"
+    for i in range(3):
+        write(folder / f"f{i}.exe", MZ + bytes([i]))
+    factory = Factory()
+    make_scanner(cfg, db, clock, RecordingUI(), factory).run(ScanOptions(target=str(folder)))
+    assert factory.calls.count("files") == 3
+
+    clock.now = next_reset(clock.now) + 10
+    cfg.virustotal.daily_limit = 2
+    options = ScanOptions(target=str(folder), refresh=True)
+    outcome = make_scanner(cfg, db, clock, RecordingUI(), factory).run(options)
+    assert factory.calls.count("files") == 2
+    assert db.get_scan(outcome.scan_id).options["refresh"] is True
+
+    # Al día siguiente solo falta el tercero: los dos ya refrescados no se repiten
+    clock.now = next_reset(clock.now) + 10
+    outcome2 = make_scanner(cfg, db, clock, RecordingUI(), factory).run(options, resume_scan_id=outcome.scan_id)
+    assert factory.calls == ["users", "files"]
+    assert outcome2.complete
+
+
+def test_virustotal_results_expire_after_found_cache_days(tmp_path, cfg, db, clock):
+    folder = tmp_path / "juego"
+    exe = write(folder / "nuevo.exe", MZ + b"nuevo")
+    factory = Factory({sha_of(exe): FileReport("", 0, 0, 70)})
+    make_scanner(cfg, db, clock, RecordingUI(), factory).run(ScanOptions(target=str(folder)))
+    assert factory.calls == ["users", "files"]
+
+    clock.now += 29 * 86400
+    make_scanner(cfg, db, clock, RecordingUI(), factory).run(ScanOptions(target=str(folder)))
+    assert factory.calls == ["users"]
+
+    # Pasado un mes puede tener detecciones que el primer día no tenía
+    clock.now += 2 * 86400
+    make_scanner(cfg, db, clock, RecordingUI(), factory).run(ScanOptions(target=str(folder)))
+    assert factory.calls == ["users", "files"]
+
+
 def test_wait_mode_continues_after_reset(tmp_path, cfg, db, clock):
     cfg.virustotal.daily_limit = 4
     folder = tmp_path / "juego"
@@ -264,7 +303,7 @@ def test_trusted_signed_files_go_last_or_are_skipped(tmp_path, cfg, db, clock, m
     scanner._walk_phase(ScanOptions(target=str(folder)), state)
     scanner._hash_phase(0, state)
     scanner._signature_phase(state)
-    order = scanner._plan_lookups(ScanOptions(target=str(folder)), state)
+    order = scanner._plan_lookups(ScanOptions(target=str(folder)), state, clock.now)
     assert order[-1] == sha_of(signed)  # el firmado por Microsoft, el último
 
     cfg.signatures.skip_trusted_signed = True

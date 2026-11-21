@@ -34,8 +34,9 @@ DECOY_EXTENSIONS = {
     ".mov", ".wav", ".zip", ".rar", ".7z", ".iso", ".html", ".htm", ".nfo",
 }
 
-# Carpetas del sistema que nunca interesan
-ALWAYS_SKIP_DIRS = {"$recycle.bin", "system volume information"}
+# Carpetas del sistema que solo se saltan en la raíz de una unidad, que es donde
+# las crea Windows; en otro sitio podrían esconder algo
+DRIVE_ROOT_SKIP_DIRS = {"$recycle.bin", "system volume information"}
 
 RTLO = "‮"  # carácter que invierte el texto y se usa para disfrazar extensiones
 SNIFF_WORKERS = 8
@@ -110,7 +111,7 @@ class Walker:
         self.checkpoint = checkpoint or (lambda: None)
         self.extensions = set(cfg.extensions)
         self.no_sniff = set(cfg.no_sniff_extensions)
-        self.exclude_dirs = set(cfg.exclude_dirs) | ALWAYS_SKIP_DIRS
+        self.exclude_dirs = set(cfg.exclude_dirs)
         self.max_bytes = cfg.max_file_size_mb * 1024 * 1024
 
     def walk(self, target: str) -> WalkResult:
@@ -147,7 +148,10 @@ class Walker:
                     # Enlaces simbólicos y junctions: se saltan para evitar bucles
                     if attrs & FILE_ATTRIBUTE_REPARSE_POINT:
                         continue
-                    if entry.name.lower() in self.exclude_dirs:
+                    name = entry.name.lower()
+                    if name in self.exclude_dirs:
+                        continue
+                    if name in DRIVE_ROOT_SKIP_DIRS and os.path.dirname(directory) == directory:
                         continue
                     stack.append(path)
                     continue

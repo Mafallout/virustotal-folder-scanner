@@ -187,6 +187,7 @@ class VirusTotalConfig:
     daily_limit: int = 500
     direct_upload_max_mb: int = 32
     not_found_cache_days: int = 7
+    found_cache_days: int = 30
     analysis_first_check_seconds: int = 90
     analysis_max_checks_per_run: int = 6
     request_timeout_seconds: int = 30
@@ -325,6 +326,7 @@ def _validate(cfg: Config) -> None:
     require(vt.daily_limit >= 1, "[virustotal] daily_limit debe ser 1 o más")
     require(1 <= vt.direct_upload_max_mb <= 32, "[virustotal] direct_upload_max_mb debe estar entre 1 y 32")
     require(vt.not_found_cache_days >= 0, "[virustotal] not_found_cache_days no puede ser negativo")
+    require(vt.found_cache_days >= 0, "[virustotal] found_cache_days no puede ser negativo")
     require(vt.analysis_first_check_seconds >= 10, "[virustotal] analysis_first_check_seconds debe ser 10 o más")
     require(vt.analysis_max_checks_per_run >= 1, "[virustotal] analysis_max_checks_per_run debe ser 1 o más")
     require(vt.request_timeout_seconds >= 5, "[virustotal] request_timeout_seconds debe ser 5 o más")

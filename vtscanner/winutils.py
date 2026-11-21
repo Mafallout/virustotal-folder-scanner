@@ -10,6 +10,11 @@ from typing import Iterator
 
 IS_WINDOWS = os.name == "nt"
 
+# Rutas completas: con solo el nombre, Windows busca antes en la carpeta actual
+SYSTEM_ROOT = os.environ.get("SystemRoot", r"C:\Windows")
+POWERSHELL = os.path.join(SYSTEM_ROOT, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+EXPLORER = os.path.join(SYSTEM_ROOT, "explorer.exe")
+
 # Atributos de archivo de Windows (st_file_attributes)
 FILE_ATTRIBUTE_HIDDEN = 0x2
 FILE_ATTRIBUTE_SYSTEM = 0x4

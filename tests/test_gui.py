@@ -73,12 +73,53 @@ def test_results_name_the_engines(qtbot):
     row.detected_by = [("Cynet", "Malicious (score: 100)")]
     model = ResultsModel([row, report_row(Level.CLEAN, "a.dll", 0)])
     assert model.index(0, 3).data() == "Cynet"
-    assert model.index(0, 3).data(Qt.ItemDataRole.ToolTipRole) == "Cynet: Malicious (score: 100)"
+    assert model.index(0, 3).data(Qt.ItemDataRole.ToolTipRole) == "<qt>Cynet: Malicious (score: 100)</qt>"
     assert model.index(1, 3).data() == ""
     proxy = ResultsFilter()
     proxy.setSourceModel(model)
     proxy.set_text("cynet")
     assert proxy.rowCount() == 1
+
+
+def test_tooltips_never_render_html_from_the_folder(qtbot):
+    # El firmante de un certificado lo elige quien lo crea; Qt cargaría la imagen
+    row = report_row(Level.UNKNOWN, "setup.exe")
+    row.signature = "no verificable (<img src=//203.0.113.5/x/a.png>)"
+    model = ResultsModel([row])
+    tip = model.index(0, 6).data(Qt.ItemDataRole.ToolTipRole)
+    assert "<img" not in tip
+    assert "&lt;img src=//203.0.113.5/x/a.png&gt;" in tip
+    assert dialogs.plain_tip("") == ""
+    assert dialogs.plain_tip("a\nb") == "<qt>a<br>b</qt>"
+
+
+def test_window_closes_if_the_scan_ends_while_asking(cfg, tmp_path, qtbot, monkeypatch):
+    window = make_window(cfg, tmp_path, qtbot, Factory())
+
+    class Worker:
+        running = True
+
+        def isRunning(self):  # noqa: N802
+            return self.running
+
+    def question(*args):
+        window.worker.running = False  # el análisis acaba con la pregunta abierta
+        return main_window.QMessageBox.StandardButton.Yes
+
+    window.worker = Worker()
+    monkeypatch.setattr(main_window.QMessageBox, "question", question)
+    window.show()
+    assert window.close()
+    assert not window.close_requested
+
+
+def test_show_in_explorer_never_opens_a_folder_without_trailing_slash(tmp_path, monkeypatch):
+    # Sin la barra final, Windows ejecutaría datos.exe en vez de abrir la carpeta datos
+    (tmp_path / "datos").mkdir()
+    opened = []
+    monkeypatch.setattr(main_window.os, "startfile", opened.append, raising=False)
+    main_window.show_in_explorer(str(tmp_path / "datos" / "en_cuarentena.exe"))
+    assert opened == [str(tmp_path / "datos") + "\\"]
 
 
 def test_live_list_puts_findings_on_top(qtbot):

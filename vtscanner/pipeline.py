@@ -75,7 +75,12 @@ class ScanOptions:
 
     def stored(self) -> dict[str, Any]:
         """Lo que se guarda para --resume."""
-        return {"upload": self.upload, "defender": self.defender, "all_files": self.all_files}
+        return {
+            "upload": self.upload,
+            "defender": self.defender,
+            "all_files": self.all_files,
+            "refresh": self.refresh,
+        }
 
     def labels(self) -> list[str]:
         flags = [
@@ -254,7 +259,8 @@ class Scanner:
             self._walk_phase(options, state)
             self._hash_phase(scan_id, state)
             self._signature_phase(state)
-            lookups = self._plan_lookups(options, state)
+            scan = self.db.get_scan(scan_id)
+            lookups = self._plan_lookups(options, state, scan.started_at if scan else started)
             if options.dry_run:
                 self._estimate(lookups, state, dry_run=True)
             elif client is not None:
@@ -477,13 +483,14 @@ class Scanner:
 
     # ---- planificación ------------------------------------------------------
 
-    def _plan_lookups(self, options: ScanOptions, state: _RunState) -> list[str]:
-        """Hashes que hay que consultar, ordenados por prioridad."""
+    def _plan_lookups(self, options: ScanOptions, state: _RunState, scan_started: float) -> list[str]:
+        """Hashes que hay que consultar, ordenados por prioridad: primero los que
+        nunca se han consultado y después los que se vuelven a consultar."""
         records = self.db.get_vt_records(state.groups.keys())
         now = self.clock()
-        not_found_ttl = self.cfg.virustotal.not_found_cache_days * 86400
+        vt = self.cfg.virustotal
         trusted = self.cfg.signatures.trusted_publishers
-        planned: list[tuple[tuple[int, int, str], str]] = []
+        planned: list[tuple[tuple[bool, tuple[int, int, str]], str]] = []
         for sha, results in state.groups.items():
             record = records.get(sha)
             if record is not None and record.state == "pending_analysis":
@@ -495,16 +502,19 @@ class Scanner:
             ):
                 state.trusted_skip.add(sha)
                 continue
-            needed = (
-                record is None
-                or options.refresh
-                or (
-                    (record.state == "not_found" or record.total == 0)
-                    and now - record.updated_at > not_found_ttl
+            if record is None:
+                needed = True
+            else:
+                # Lo desconocido, sin motores o recién subido cambia pronto; lo demás tarda más
+                short = record.state == "not_found" or record.total == 0 or record.source == "upload"
+                days = vt.not_found_cache_days if short else vt.found_cache_days
+                # Con --refresh, lo ya consultado en este escaneo no se repite al continuarlo
+                needed = (options.refresh and record.updated_at < scan_started) or (
+                    now - record.updated_at > days * 86400
                 )
-            )
             if needed:
-                planned.append((min(file_priority(r, trusted) for r in results), sha))
+                priority = min(file_priority(r, trusted) for r in results)
+                planned.append(((record is not None, priority), sha))
         planned.sort()
         return [sha for _, sha in planned]
 
